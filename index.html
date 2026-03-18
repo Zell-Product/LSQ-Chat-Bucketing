@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WhatsApp Chat Bucketing</title>
+  <title>WhatsApp Chat Bucketing & QA</title>
   
   <!-- Load Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -24,6 +24,7 @@
 
     // ── Configuration & Taxonomy ──────────────────────────────────────────────────
     
+    // We keep this for the UI dropdowns and colors
     const TAXONOMY = {
       "Refund": ["Service & Quality Gap", "Sales & Admissions Issue", "Personal & Medical", "Financial & Pricing"],
       "Tech & Platform/LMS": ["Account & Login Access", "Content & Class Visibility", "Validity & Transfers", "Tech Support & Platforms"],
@@ -56,7 +57,6 @@
 
     // ── Helpers & Data Processing ─────────────────────────────────────────────────
 
-    // Dynamically load PapaParse to ensure it works without npm install
     function parseCSV(file) {
       return new Promise((resolve, reject) => {
         const script = document.createElement("script");
@@ -91,7 +91,7 @@
             phone: row["Phone Number"] || "",
             leadStage: row["Lead Stage"] || row["BD Lead Stage"] || "",
             currentBatch: row["Current Batch"] || "",
-            owner: row["Owner (User Name)"] || row["Owner"] || "", // Extracted for custom rules
+            owner: row["Owner (User Name)"] || row["Owner"] || "", 
             messages: [],
           };
         }
@@ -105,7 +105,6 @@
         }
       });
 
-      // Sort messages by date, keep only convos with at least 1 human message
       return Object.values(map)
         .map((c) => ({
           ...c,
@@ -116,38 +115,62 @@
 
     function conversationToText(conv) {
       return conv.messages
-        .slice(0, 30) // cap at 30 messages to stay within token limits
+        .slice(0, 30) // Cap to avoid massive tokens
         .map((m) => `[${m.direction || "?"} | ${m.date}] ${m.note.slice(0, 400)}`)
         .join("\n");
     }
 
     async function classifyConversation(conv, apiKey, attempt = 0) {
-      const delays = [1000, 2000, 4000, 8000, 16000]; // Exponential backoff for API limits
+      const delays = [1000, 2000, 4000, 8000, 16000]; 
       const convoText = conversationToText(conv);
-      
-      const taxonomyStr = Object.entries(TAXONOMY)
-        .map(([cat, subs]) => `${cat}: ${subs.join(", ")}`)
-        .join("\n");
 
       const prompt = `Classify and score this customer support conversation.
 
-Taxonomy:
-${taxonomyStr}
+TAXONOMY DEFINITIONS (Use these exact buckets based on the keywords):
+- Refund
+  - Service & Quality Gap: Unhappy with services, Faculty problem, Mentor problem, Content issue.
+  - Sales & Admissions Issue: Misselling, Loan issue, Registration issue.
+  - Personal & Medical: Medical issue, Change of mind, Personal emergency.
+  - Financial & Pricing: Financial issue, Double payment, Discount disputes.
+- Tech & Platform/LMS
+  - Account & Login Access: Password reset, Suspension, Account blocked, Revoke Access.
+  - Content & Class Visibility: Recording Issue, Batch Access, Pre Learning Access.
+  - Validity & Transfers: Validity Issue, Course Expired, Batch change.
+  - Tech Support & Platforms: LMS Downtime, Mobile App, Surgent.
+- Registrations & Exams
+  - Registration & Delays: Booking exam papers, Exam fees, Reimbursements, Registration delay, ACCA issue, IMA, CFA, FRM.
+  - Exemptions: Exemption not reflecting.
+  - Documents & Verification: Documents, Verification.
+  - Registration Codes & IR: Codes issue, Code change, IR issue.
+- Operations & Logistics
+  - Onboarding Journey: Schedule Onboarding, Rescheduling, Missed Onboarding, Enrollment form.
+  - Books & Dispatch: Books Delay, Tracking ID, Damaged Books.
+  - Batch Allocation & Timings: Batch Timings, Batch not allocated.
+- New Leads & Referrals
+  - New Lead
+  - Referral
+- Academics & Careers
+  - Academic Doubts: Doubts, Mock exams, Mock tests.
+  - Placements
+- Service
+  - Faculty Issue
+  - Mentor Related Query
+  - General Queries
 
 CRITICAL CATEGORIZATION RULES (MUST FOLLOW):
 1. Overrides by Agent Name: If the Agent Owner is exactly 'Amisha Suthar', 'Priyal Bhargava', or 'Sehar Sayed', you MUST assign Category="Operations & Logistics" and Subcategory="Onboarding Journey".
 2. Mocks: If the chat mentions "mock", "mocks", or mock exams, you MUST assign Category="Academics & Careers" and Subcategory="Academic Doubts".
-3. Exams & Fees: If the chat is about booking exam papers, paying exam fees, or getting reimbursed for exams (e.g., ACCA), you MUST assign Category="Registrations & Exams".
+3. Exams & Fees: If the chat is about booking exam papers, paying exam fees, or getting reimbursed for exams (e.g. 14,000 fees), you MUST assign Category="Registrations & Exams" and Subcategory="Registration & Delays".
 
-Scoring Rubric:
-1. Accuracy (20 or 0): Is info 100% correct?
-2. Resolution (20, 10, or 0): Solved completely + anticipated next question (20), answered direct but missed unspoken (10), missed parts (0).
-3. Tone (15, 7, or 0): Empathetic/warm (15), Neutral (7), Cold/rude (0).
-4. Listening (10, 5, or 0): Seamless (10), Asked to repeat minor detail (5), Asked for provided info (0).
-5. Speed (10, 5, or 0): Fast/holds managed (10), delayed (5), breached/unacceptable (0). Look at timestamps.
-6. CRM/Auth (10, 5, or 0): Verified ID/Logged correctly (10), Logged but wrong/partial (5), Forgot (0). Infer from context.
-7. Formatting (5, 2, or 0): Chunked/bold/bullets (5), Cluttered (2), Wall of text (0).
-8. Grammar (5, 2, or 0): Professional/no slang (5), minor typos (2), heavy errors/slang (0).
+SCORING RUBRIC:
+1. Accuracy (20 or 0): Is info 100% correct? (0 triggers Auto-Fail)
+2. Resolution (20, 10, or 0): Solved completely + anticipated next question (+1 Method) (20), Answered direct but missed unspoken (10), Missed parts/guaranteeing follow-up (0).
+3. Tone (15, 7, or 0): Empathetic/warm/used name naturally/professional emojis (15), Neutral/Robotic (7), Cold/rude (0).
+4. Listening (10, 5, or 0): Seamless continuation (10), Asked to repeat minor detail (5), Asked for provided info (0).
+5. Speed (10, 5, or 0): Fast replies under 1-2 mins/managed holds (10), Slightly delayed (5), SLA breached/unacceptable (0). Look at timestamps.
+6. CRM/Auth (10, 5, or 0): Perfect logging/verify ID (10), Logged but wrong/partial (5), Forgot (0). Infer from context.
+7. Formatting (5, 2, or 0): Chunked/bold/bullets/mobile-friendly/multimedia used (5), Cluttered (2), Wall of text (0).
+8. Grammar (5, 2, or 0): Professional/no slang (5), Minor typos (2), Heavy errors/text-speak like "pls", "u" (0).
 9. Closing (5 or 0): Explicit confirmation/proper sign-off (5), Abrupt/ghosted (0).
 
 Conversation Details:
@@ -162,7 +185,7 @@ ${convoText}`;
         contents: [{ parts: [{ text: prompt }] }],
         systemInstruction: { 
           parts: [{ 
-            text: "You are an expert QA auditor for an education institute's customer support. Classify the conversation following the exact taxonomy and critical override rules, then score the agent based on the rubric. Calculate the total score." 
+            text: "You are an expert QA auditor. Classify the chat using the provided taxonomy definitions and overrides. Score the agent strictly on the rubric. Calculate the total score. Flag the chat if there are severe issues." 
           }] 
         },
         generationConfig: {
@@ -189,9 +212,11 @@ ${convoText}`;
                 }
               },
               totalScore: { type: "INTEGER", description: "Sum of all scores (max 100)" },
-              qaFeedback: { type: "STRING", description: "1-2 sentences of specific feedback for the agent" }
+              qaFeedback: { type: "STRING", description: "1-2 sentences of specific feedback for the agent" },
+              flagged: { type: "BOOLEAN", description: "True ONLY IF there is a major concern (e.g., highly inaccurate info, rudeness, severe SLA breach, ignored student)" },
+              flagReason: { type: "STRING", description: "If flagged=true, give a 3-5 word reason (e.g., 'Severe SLA Breach', 'Rude Tone'). Otherwise empty string." }
             },
-            required: ["category", "subcategory", "summary", "sentiment", "scores", "totalScore", "qaFeedback"]
+            required: ["category", "subcategory", "summary", "sentiment", "scores", "totalScore", "qaFeedback", "flagged", "flagReason"]
           }
         }
       };
@@ -219,7 +244,7 @@ ${convoText}`;
         return { 
           category: "Service", subcategory: "General Queries", summary: "Classification failed: " + err.message, sentiment: "Neutral",
           scores: { accuracy: 0, resolution: 0, tone: 0, listening: 0, speed: 0, crm: 0, formatting: 0, grammar: 0, closing: 0 },
-          totalScore: 0, qaFeedback: "Failed to process due to API limits or Invalid Key."
+          totalScore: 0, qaFeedback: "Failed to process due to API limits or Invalid Key.", flagged: true, flagReason: "API Error"
         };
       }
     }
@@ -307,18 +332,16 @@ ${convoText}`;
     // ── Main App ──────────────────────────────────────────────────────────────────
 
     function App() {
-      // API Key State
       const [apiKey, setApiKey] = useState("");
       const [tempKeyInput, setTempKeyInput] = useState("");
       const [showSettings, setShowSettings] = useState(false);
 
-      const [stage, setStage] = useState("upload"); // upload | processing | done
+      const [stage, setStage] = useState("upload"); 
       const [conversations, setConversations] = useState([]);
       const [results, setResults] = useState([]);
       const [progress, setProgress] = useState(0);
       const [total, setTotal] = useState(0);
       
-      // Filters
       const [search, setSearch] = useState("");
       const [filterCat, setFilterCat] = useState("All");
       const [filterSent, setFilterSent] = useState("All");
@@ -329,7 +352,6 @@ ${convoText}`;
       const fileRef = useRef();
       const abortRef = useRef(false);
 
-      // Load API Key on mount
       useEffect(() => {
         const savedKey = localStorage.getItem("gemini_qa_api_key");
         if (savedKey) {
@@ -346,12 +368,6 @@ ${convoText}`;
           setShowSettings(false);
           setTempKeyInput("");
         }
-      };
-
-      const clearApiKey = () => {
-        localStorage.removeItem("gemini_qa_api_key");
-        setApiKey("");
-        setShowSettings(true);
       };
 
       const handleFiles = useCallback(async (files) => {
@@ -393,7 +409,6 @@ ${convoText}`;
             setProgress(i + 1);
             setResults([...out]);
             
-            // Gentle delay to respect API rate limits alongside exponential backoff
             if (i < convos.length - 1) await new Promise((r) => setTimeout(r, 400));
           }
           if (!abortRef.current) setStage("done");
@@ -412,7 +427,8 @@ ${convoText}`;
         const headers = [
           "Prospect Id", "Student ID", "Name", "Email", "Phone", "Owner", "Lead Stage", "Current Batch", 
           "Category", "Subcategory", "Sentiment", "Summary", "Message Count", 
-          "QA Score", "QA Feedback", "Score: Accuracy", "Score: Resolution", "Score: Tone", 
+          "QA Score", "Flagged", "Flag Reason", "QA Feedback", 
+          "Score: Accuracy", "Score: Resolution", "Score: Tone", 
           "Score: Listening", "Score: Speed", "Score: CRM", "Score: Formatting", "Score: Grammar", "Score: Closing"
         ];
         const rows = results.map((r) => {
@@ -420,7 +436,7 @@ ${convoText}`;
           return [
             r.prospectId, r.studentId, r.name, r.email, r.phone, r.owner, r.leadStage, r.currentBatch,
             r.category, r.subcategory, r.sentiment, `"${(r.summary || "").replace(/"/g, "'")}"`, r.messages.length,
-            r.totalScore || 0, `"${(r.qaFeedback || "").replace(/"/g, "'")}"`,
+            r.totalScore || 0, r.flagged ? "Yes" : "No", r.flagReason || "", `"${(r.qaFeedback || "").replace(/"/g, "'")}"`,
             s.accuracy || 0, s.resolution || 0, s.tone || 0, s.listening || 0, s.speed || 0, s.crm || 0, s.formatting || 0, s.grammar || 0, s.closing || 0
           ];
         });
@@ -433,9 +449,9 @@ ${convoText}`;
         a.click();
       };
 
-      // Stats for Dashboard
       const catCounts = results.reduce((acc, r) => { acc[r.category] = (acc[r.category] || 0) + 1; return acc; }, {});
       const sentCounts = results.reduce((acc, r) => { acc[r.sentiment] = (acc[r.sentiment] || 0) + 1; return acc; }, {});
+      const flaggedCount = results.filter(r => r.flagged).length;
       const avgScore = results.length ? Math.round(results.reduce((acc, r) => acc + (r.totalScore || 0), 0) / results.length) : 0;
 
       const filtered = results.filter((r) => {
@@ -449,7 +465,7 @@ ${convoText}`;
       return (
         <div className="min-h-screen bg-slate-50 text-slate-800 font-sans selection:bg-blue-200">
           
-          {/* ── Settings Modal ── */}
+          {/* Settings Modal */}
           {showSettings && (
             <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
               <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 animate-in zoom-in-95 duration-200">
@@ -492,7 +508,7 @@ ${convoText}`;
             </div>
           )}
 
-          {/* ── Header ── */}
+          {/* Header */}
           <header className="bg-slate-900 px-6 py-4 flex items-center justify-between sticky top-0 z-10 shadow-md">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 bg-emerald-500 rounded-lg flex items-center justify-center text-xl shadow-lg shadow-emerald-500/20">💬</div>
@@ -531,7 +547,7 @@ ${convoText}`;
 
           <main className="p-6 max-w-7xl mx-auto">
             
-            {/* ── UPLOAD STAGE ── */}
+            {/* UPLOAD STAGE */}
             {stage === "upload" && (
               <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="text-center mb-2 text-slate-500 text-sm font-medium">
@@ -557,29 +573,13 @@ ${convoText}`;
                   </div>
                 )}
 
-                {/* Taxonomy Preview */}
-                <div className="max-w-4xl mx-auto mt-12">
-                  <div className="font-bold text-xs mb-4 text-slate-400 tracking-widest uppercase">Classification Taxonomy Map</div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {Object.entries(TAXONOMY).map(([cat, subs]) => (
-                      <div key={cat} className="bg-white rounded-xl p-4 shadow-sm border border-slate-100" style={{ borderLeft: `4px solid ${CATEGORY_COLORS[cat]}` }}>
-                        <div className="font-bold text-[13px] mb-2" style={{ color: CATEGORY_COLORS[cat] }}>{cat}</div>
-                        <ul className="space-y-1">
-                          {subs.map((sub) => (
-                            <li key={sub} className="text-[11px] text-slate-500 flex items-start gap-1.5">
-                              <span className="text-slate-300 mt-0.5">•</span> 
-                              <span>{sub}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ))}
-                  </div>
+                <div className="max-w-4xl mx-auto mt-12 opacity-50">
+                  <div className="font-bold text-xs mb-4 text-slate-400 tracking-widest uppercase text-center">Ready to analyze thousands of chats</div>
                 </div>
               </div>
             )}
 
-            {/* ── PROCESSING STAGE ── */}
+            {/* PROCESSING STAGE */}
             {stage === "processing" && (
               <div className="max-w-2xl mx-auto mt-16 text-center animate-in fade-in duration-500">
                 <div className="text-5xl mb-4 animate-bounce">✨</div>
@@ -626,7 +626,7 @@ ${convoText}`;
               </div>
             )}
 
-            {/* ── DASHBOARD STAGE ── */}
+            {/* DASHBOARD STAGE */}
             {stage === "done" && (
               <div className="animate-in fade-in duration-500">
                 
@@ -635,8 +635,8 @@ ${convoText}`;
                   {[
                     { label: "Total Audited", value: results.length, icon: "💬", color: "border-slate-200" },
                     { label: "Avg QA Score", value: `${avgScore}%`, icon: "🎯", color: "border-purple-400", valColor: avgScore >= 80 ? "text-purple-600" : "text-orange-500" },
-                    { label: "Needs Attention (Negative)", value: sentCounts.Negative || 0, icon: "⚠️", color: "border-red-400", valColor: "text-red-500" },
-                    { label: "Positive Feedback", value: sentCounts.Positive || 0, icon: "✅", color: "border-emerald-400", valColor: "text-emerald-500" },
+                    { label: "Needs Attention", value: sentCounts.Negative || 0, icon: "⚠️", color: "border-red-400", valColor: "text-red-500" },
+                    { label: "Flagged Chats", value: flaggedCount, icon: "🚩", color: "border-rose-500", valColor: "text-rose-600" },
                     { label: "Active Categories", value: Object.keys(catCounts).length, icon: "🗂️", color: "border-blue-400" },
                   ].map((stat) => (
                     <div key={stat.label} className={`bg-white rounded-xl p-5 shadow-sm border border-slate-100 border-b-4 ${stat.color}`}>
@@ -652,15 +652,6 @@ ${convoText}`;
                   <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 flex flex-col items-center justify-center">
                     <div className="font-bold text-xs mb-4 text-slate-400 tracking-wider w-full text-center">OVERALL BREAKDOWN</div>
                     <DonutChart data={catCounts} total={results.length} />
-                    <div className="mt-6 w-full space-y-2">
-                      {Object.entries(catCounts).sort(([,a],[,b])=>b-a).slice(0, 5).map(([cat, cnt]) => (
-                        <div key={cat} className="flex items-center gap-2">
-                          <div className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: CATEGORY_COLORS[cat] }} />
-                          <div className="text-[11px] text-slate-500 flex-1 truncate">{cat}</div>
-                          <div className="text-[11px] font-bold text-slate-800">{cnt}</div>
-                        </div>
-                      ))}
-                    </div>
                   </div>
                   <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 md:col-span-2">
                     <div className="font-bold text-xs mb-5 text-slate-400 tracking-wider">DISTRIBUTION BY CATEGORY</div>
@@ -716,7 +707,7 @@ ${convoText}`;
                       {filtered.map((r, i) => (
                         <div key={r.prospectId + i} className="group">
                           <div
-                            className={`grid grid-cols-12 gap-4 px-5 py-3 items-center cursor-pointer transition-colors ${i % 2 === 0 ? "bg-white" : "bg-slate-50/50"} hover:bg-blue-50/50`}
+                            className={`grid grid-cols-12 gap-4 px-5 py-3 items-center cursor-pointer transition-colors ${r.flagged && expanded !== i ? 'bg-red-50/30' : i % 2 === 0 ? "bg-white" : "bg-slate-50/50"} hover:bg-blue-50/50`}
                             onClick={() => setExpanded(expanded === i ? null : i)}
                           >
                             <div className="col-span-3">
@@ -744,10 +735,11 @@ ${convoText}`;
                             <div className="col-span-1 text-center">
                               <SentimentBadge s={r.sentiment} />
                             </div>
-                            <div className="col-span-1 text-center">
+                            <div className="col-span-1 flex items-center justify-center gap-1.5">
                               <div className={`text-xs font-bold ${r.totalScore >= 80 ? 'text-emerald-600' : r.totalScore >= 60 ? 'text-orange-500' : 'text-red-600'}`}>
                                 {r.totalScore || 0}
                               </div>
+                              {r.flagged && <span title={r.flagReason} className="text-sm cursor-help">🚩</span>}
                             </div>
                           </div>
 
@@ -761,7 +753,7 @@ ${convoText}`;
                                   <div className="font-bold text-xs text-slate-400 tracking-wider">CONVERSATION THREAD</div>
                                   <div className="text-[10px] text-slate-500 font-mono">{r.prospectId}</div>
                                 </div>
-                                <div className="max-h-[300px] overflow-y-auto pr-2 space-y-3 custom-scrollbar">
+                                <div className="max-h-[360px] overflow-y-auto pr-2 space-y-3 custom-scrollbar">
                                   {r.messages.map((m, mi) => (
                                     <div 
                                       key={mi} 
@@ -785,47 +777,51 @@ ${convoText}`;
                               </div>
 
                               {/* Right: QA Scorecard */}
-                              <div className="bg-slate-900 rounded-xl p-4 border border-slate-700 h-fit max-h-[300px] overflow-y-auto custom-scrollbar">
-                                <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-700">
-                                  <div className="font-bold text-xs text-slate-400 tracking-wider">QA SCORECARD</div>
-                                  <div className={`text-lg font-black ${r.totalScore >= 80 ? 'text-emerald-400' : r.totalScore >= 60 ? 'text-orange-400' : 'text-red-400'}`}>
-                                    {r.totalScore || 0}<span className="text-xs text-slate-500">/100</span>
+                              <div className="flex flex-col gap-4">
+                                <div className="bg-slate-900 rounded-xl p-4 border border-slate-700 h-fit max-h-[250px] overflow-y-auto custom-scrollbar">
+                                  <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-700">
+                                    <div className="font-bold text-xs text-slate-400 tracking-wider">QA SCORECARD</div>
+                                    <div className={`text-lg font-black ${r.totalScore >= 80 ? 'text-emerald-400' : r.totalScore >= 60 ? 'text-orange-400' : 'text-red-400'}`}>
+                                      {r.totalScore || 0}<span className="text-xs text-slate-500">/100</span>
+                                    </div>
+                                  </div>
+                                  
+                                  <div className="space-y-3 mb-2">
+                                    {[
+                                      { group: "Resolution & Accuracy (40)", items: [
+                                        { k: "Accuracy", v: r.scores?.accuracy, max: 20 },
+                                        { k: "Resolution", v: r.scores?.resolution, max: 20 }
+                                      ]},
+                                      { group: "Empathy & Tone (25)", items: [
+                                        { k: "Tone", v: r.scores?.tone, max: 15 },
+                                        { k: "Listening", v: r.scores?.listening, max: 10 }
+                                      ]},
+                                      { group: "Process (20)", items: [
+                                        { k: "Speed (TAT)", v: r.scores?.speed, max: 10 },
+                                        { k: "CRM/Auth", v: r.scores?.crm, max: 10 }
+                                      ]},
+                                      { group: "Communication (15)", items: [
+                                        { k: "Format", v: r.scores?.formatting, max: 5 },
+                                        { k: "Grammar", v: r.scores?.grammar, max: 5 },
+                                        { k: "Closing", v: r.scores?.closing, max: 5 }
+                                      ]}
+                                    ].map((g, gi) => (
+                                      <div key={gi}>
+                                        <div className="text-[10px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">{g.group}</div>
+                                        {g.items.map(item => (
+                                          <div key={item.k} className="flex justify-between items-center text-xs mb-1">
+                                            <span className="text-slate-300">{item.k}</span>
+                                            <span className="font-mono text-slate-400"><span className={item.v === item.max ? "text-emerald-400" : item.v === 0 ? "text-red-400" : "text-orange-400"}>{item.v || 0}</span>/{item.max}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ))}
                                   </div>
                                 </div>
                                 
-                                <div className="space-y-3 mb-4">
-                                  {[
-                                    { group: "Resolution & Accuracy (40)", items: [
-                                      { k: "Accuracy", v: r.scores?.accuracy, max: 20 },
-                                      { k: "Resolution", v: r.scores?.resolution, max: 20 }
-                                    ]},
-                                    { group: "Empathy & Tone (25)", items: [
-                                      { k: "Tone", v: r.scores?.tone, max: 15 },
-                                      { k: "Listening", v: r.scores?.listening, max: 10 }
-                                    ]},
-                                    { group: "Process (20)", items: [
-                                      { k: "Speed (TAT)", v: r.scores?.speed, max: 10 },
-                                      { k: "CRM/Auth", v: r.scores?.crm, max: 10 }
-                                    ]},
-                                    { group: "Communication (15)", items: [
-                                      { k: "Format", v: r.scores?.formatting, max: 5 },
-                                      { k: "Grammar", v: r.scores?.grammar, max: 5 },
-                                      { k: "Closing", v: r.scores?.closing, max: 5 }
-                                    ]}
-                                  ].map((g, gi) => (
-                                    <div key={gi}>
-                                      <div className="text-[10px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">{g.group}</div>
-                                      {g.items.map(item => (
-                                        <div key={item.k} className="flex justify-between items-center text-xs mb-1">
-                                          <span className="text-slate-300">{item.k}</span>
-                                          <span className="font-mono text-slate-400"><span className={item.v === item.max ? "text-emerald-400" : item.v === 0 ? "text-red-400" : "text-orange-400"}>{item.v || 0}</span>/{item.max}</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  ))}
-                                </div>
-                                
-                                <div className="bg-slate-800 rounded p-3 text-xs text-slate-300 italic border-l-2 border-blue-500">
+                                <div className={`rounded-xl p-4 text-xs italic ${r.flagged ? 'bg-red-900/30 border border-red-800 text-red-200' : 'bg-slate-900 border border-slate-700 text-slate-300'}`}>
+                                  {r.flagged && <div className="font-bold text-red-400 not-italic mb-2 flex items-center gap-2">🚩 FLAGGED: {r.flagReason}</div>}
+                                  <div className="font-bold text-slate-400 not-italic mb-1 uppercase tracking-wider text-[10px]">Feedback</div>
                                   "{r.qaFeedback}"
                                 </div>
                               </div>
@@ -852,7 +848,6 @@ ${convoText}`;
       );
     }
 
-    // Render the App
     const root = ReactDOM.createRoot(document.getElementById("root"));
     root.render(<App />);
   </script>
