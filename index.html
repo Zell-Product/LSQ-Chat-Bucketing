@@ -20,13 +20,10 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useRef, useCallback } = React;
+    const { useState, useRef, useCallback, useEffect } = React;
 
     // ── Configuration & Taxonomy ──────────────────────────────────────────────────
     
-    // IMPORTANT: When running this locally, you must provide your Gemini API key here!
-    const apiKey = ""; 
-
     const TAXONOMY = {
       "Refund": ["Service & Quality Gap", "Sales & Admissions Issue", "Personal & Medical", "Financial & Pricing"],
       "Tech & Platform/LMS": ["Account & Login Access", "Content & Class Visibility", "Validity & Transfers", "Tech Support & Platforms"],
@@ -94,6 +91,7 @@
             phone: row["Phone Number"] || "",
             leadStage: row["Lead Stage"] || row["BD Lead Stage"] || "",
             currentBatch: row["Current Batch"] || "",
+            owner: row["Owner (User Name)"] || row["Owner"] || "", // Extracted for custom rules
             messages: [],
           };
         }
@@ -123,7 +121,7 @@
         .join("\n");
     }
 
-    async function classifyConversation(conv, attempt = 0) {
+    async function classifyConversation(conv, apiKey, attempt = 0) {
       const delays = [1000, 2000, 4000, 8000, 16000]; // Exponential backoff for API limits
       const convoText = conversationToText(conv);
       
@@ -132,8 +130,14 @@
         .join("\n");
 
       const prompt = `Classify and score this customer support conversation.
+
 Taxonomy:
 ${taxonomyStr}
+
+CRITICAL CATEGORIZATION RULES (MUST FOLLOW):
+1. Overrides by Agent Name: If the Agent Owner is exactly 'Amisha Suthar', 'Priyal Bhargava', or 'Sehar Sayed', you MUST assign Category="Operations & Logistics" and Subcategory="Onboarding Journey".
+2. Mocks: If the chat mentions "mock", "mocks", or mock exams, you MUST assign Category="Academics & Careers" and Subcategory="Academic Doubts".
+3. Exams & Fees: If the chat is about booking exam papers, paying exam fees, or getting reimbursed for exams (e.g., ACCA), you MUST assign Category="Registrations & Exams".
 
 Scoring Rubric:
 1. Accuracy (20 or 0): Is info 100% correct?
@@ -146,14 +150,19 @@ Scoring Rubric:
 8. Grammar (5, 2, or 0): Professional/no slang (5), minor typos (2), heavy errors/slang (0).
 9. Closing (5 or 0): Explicit confirmation/proper sign-off (5), Abrupt/ghosted (0).
 
-Conversation (Student: ${conv.name}, Stage: ${conv.leadStage || "N/A"}):
+Conversation Details:
+- Student Name: ${conv.name}
+- Stage: ${conv.leadStage || "N/A"}
+- Agent Owner: ${conv.owner || "Unknown"}
+
+Chat Transcript:
 ${convoText}`;
 
       const payload = {
         contents: [{ parts: [{ text: prompt }] }],
         systemInstruction: { 
           parts: [{ 
-            text: "You are an expert QA auditor for an education institute's customer support. Classify the conversation, then score the agent based on the rubric. Calculate the total score." 
+            text: "You are an expert QA auditor for an education institute's customer support. Classify the conversation following the exact taxonomy and critical override rules, then score the agent based on the rubric. Calculate the total score." 
           }] 
         },
         generationConfig: {
@@ -194,7 +203,7 @@ ${convoText}`;
           body: JSON.stringify(payload),
         });
 
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status} - Invalid API Key or Rate Limit exceeded.`);
 
         const data = await response.json();
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -203,14 +212,14 @@ ${convoText}`;
         
         return JSON.parse(text);
       } catch (err) {
-        if (attempt < delays.length) {
+        if (attempt < delays.length && !err.message.includes("Invalid API Key")) {
           await new Promise(r => setTimeout(r, delays[attempt]));
-          return classifyConversation(conv, attempt + 1);
+          return classifyConversation(conv, apiKey, attempt + 1);
         }
         return { 
           category: "Service", subcategory: "General Queries", summary: "Classification failed: " + err.message, sentiment: "Neutral",
           scores: { accuracy: 0, resolution: 0, tone: 0, listening: 0, speed: 0, crm: 0, formatting: 0, grammar: 0, closing: 0 },
-          totalScore: 0, qaFeedback: "Failed to process due to API limits."
+          totalScore: 0, qaFeedback: "Failed to process due to API limits or Invalid Key."
         };
       }
     }
@@ -298,6 +307,11 @@ ${convoText}`;
     // ── Main App ──────────────────────────────────────────────────────────────────
 
     function App() {
+      // API Key State
+      const [apiKey, setApiKey] = useState("");
+      const [tempKeyInput, setTempKeyInput] = useState("");
+      const [showSettings, setShowSettings] = useState(false);
+
       const [stage, setStage] = useState("upload"); // upload | processing | done
       const [conversations, setConversations] = useState([]);
       const [results, setResults] = useState([]);
@@ -315,7 +329,37 @@ ${convoText}`;
       const fileRef = useRef();
       const abortRef = useRef(false);
 
+      // Load API Key on mount
+      useEffect(() => {
+        const savedKey = localStorage.getItem("gemini_qa_api_key");
+        if (savedKey) {
+          setApiKey(savedKey);
+        } else {
+          setShowSettings(true);
+        }
+      }, []);
+
+      const saveApiKey = () => {
+        if (tempKeyInput.trim()) {
+          localStorage.setItem("gemini_qa_api_key", tempKeyInput.trim());
+          setApiKey(tempKeyInput.trim());
+          setShowSettings(false);
+          setTempKeyInput("");
+        }
+      };
+
+      const clearApiKey = () => {
+        localStorage.removeItem("gemini_qa_api_key");
+        setApiKey("");
+        setShowSettings(true);
+      };
+
       const handleFiles = useCallback(async (files) => {
+        if (!apiKey) {
+          setShowSettings(true);
+          return;
+        }
+
         setError("");
         try {
           let allRows = [];
@@ -343,7 +387,7 @@ ${convoText}`;
             if (abortRef.current) break;
             const conv = convos[i];
             
-            const res = await classifyConversation(conv);
+            const res = await classifyConversation(conv, apiKey);
             out.push({ ...conv, ...res });
             
             setProgress(i + 1);
@@ -357,7 +401,7 @@ ${convoText}`;
         } catch (e) {
           setError("Failed to parse CSV: " + e.message);
         }
-      }, []);
+      }, [apiKey]);
 
       const onDrop = useCallback((e) => {
         e.preventDefault();
@@ -366,7 +410,7 @@ ${convoText}`;
 
       const exportCSV = () => {
         const headers = [
-          "Prospect Id", "Student ID", "Name", "Email", "Phone", "Lead Stage", "Current Batch", 
+          "Prospect Id", "Student ID", "Name", "Email", "Phone", "Owner", "Lead Stage", "Current Batch", 
           "Category", "Subcategory", "Sentiment", "Summary", "Message Count", 
           "QA Score", "QA Feedback", "Score: Accuracy", "Score: Resolution", "Score: Tone", 
           "Score: Listening", "Score: Speed", "Score: CRM", "Score: Formatting", "Score: Grammar", "Score: Closing"
@@ -374,7 +418,7 @@ ${convoText}`;
         const rows = results.map((r) => {
           const s = r.scores || {};
           return [
-            r.prospectId, r.studentId, r.name, r.email, r.phone, r.leadStage, r.currentBatch,
+            r.prospectId, r.studentId, r.name, r.email, r.phone, r.owner, r.leadStage, r.currentBatch,
             r.category, r.subcategory, r.sentiment, `"${(r.summary || "").replace(/"/g, "'")}"`, r.messages.length,
             r.totalScore || 0, `"${(r.qaFeedback || "").replace(/"/g, "'")}"`,
             s.accuracy || 0, s.resolution || 0, s.tone || 0, s.listening || 0, s.speed || 0, s.crm || 0, s.formatting || 0, s.grammar || 0, s.closing || 0
@@ -405,20 +449,70 @@ ${convoText}`;
       return (
         <div className="min-h-screen bg-slate-50 text-slate-800 font-sans selection:bg-blue-200">
           
+          {/* ── Settings Modal ── */}
+          {showSettings && (
+            <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+              <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 animate-in zoom-in-95 duration-200">
+                <div className="text-3xl mb-3">🔑</div>
+                <h2 className="text-xl font-bold text-slate-800 mb-2">API Key Required</h2>
+                <p className="text-sm text-slate-500 mb-6">
+                  To analyze chats, you need a free Google Gemini API key. Your key is saved locally in your browser and never sent anywhere else.
+                </p>
+                <div className="mb-4">
+                  <label className="block text-xs font-bold text-slate-600 mb-1">GEMINI API KEY</label>
+                  <input 
+                    type="password"
+                    value={tempKeyInput}
+                    onChange={(e) => setTempKeyInput(e.target.value)}
+                    placeholder="AIzaSy..."
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  />
+                </div>
+                <div className="flex gap-2 justify-end mt-6">
+                  {apiKey && (
+                    <button 
+                      onClick={() => setShowSettings(false)}
+                      className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                  <button 
+                    onClick={saveApiKey}
+                    disabled={!tempKeyInput.trim()}
+                    className="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg shadow-sm"
+                  >
+                    Save & Continue
+                  </button>
+                </div>
+                <div className="mt-4 pt-4 border-t border-slate-100 text-xs text-center text-slate-400">
+                  Get a free key at <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-blue-500 hover:underline">Google AI Studio</a>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* ── Header ── */}
           <header className="bg-slate-900 px-6 py-4 flex items-center justify-between sticky top-0 z-10 shadow-md">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 bg-emerald-500 rounded-lg flex items-center justify-center text-xl shadow-lg shadow-emerald-500/20">💬</div>
               <div>
-                <h1 className="text-white font-bold text-base tracking-tight leading-tight">WhatsApp Chat Bucketing</h1>
+                <h1 className="text-white font-bold text-base tracking-tight leading-tight">WhatsApp Chat QA Auditor</h1>
                 <p className="text-slate-400 text-[11px] font-medium tracking-wide">Powered by Gemini AI · Zell Education</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <button 
+                onClick={() => setShowSettings(true)}
+                title="Manage API Key"
+                className="bg-slate-800 text-slate-400 hover:text-white rounded-md p-2 cursor-pointer transition-colors"
+              >
+                ⚙️
+              </button>
               {stage === "done" && (
                 <button 
                   onClick={exportCSV}
-                  className="bg-white text-slate-900 hover:bg-slate-100 border-0 rounded-md px-4 py-2 text-xs font-semibold cursor-pointer flex items-center gap-2 transition-colors"
+                  className="bg-white text-slate-900 hover:bg-slate-100 border-0 rounded-md px-4 py-2 text-xs font-semibold cursor-pointer flex items-center gap-2 transition-colors ml-2"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                   Export CSV
@@ -426,8 +520,8 @@ ${convoText}`;
               )}
               {stage !== "upload" && (
                 <button 
-                  onClick={() => { abortRef.current = true; setStage("upload"); setResults([]); }}
-                  className="bg-slate-800 text-slate-300 hover:text-white border-0 rounded-md px-4 py-2 text-xs font-semibold cursor-pointer transition-colors"
+                  onClick={() => { abortRef.current = true; setStage("upload"); setResults([]); setProgress(0); }}
+                  className="bg-slate-800 text-slate-300 hover:text-white border-0 rounded-md px-4 py-2 text-xs font-semibold cursor-pointer transition-colors ml-2"
                 >
                   Reset
                 </button>
@@ -489,8 +583,8 @@ ${convoText}`;
             {stage === "processing" && (
               <div className="max-w-2xl mx-auto mt-16 text-center animate-in fade-in duration-500">
                 <div className="text-5xl mb-4 animate-bounce">✨</div>
-                <h2 className="text-2xl font-bold mb-2">Gemini is Classifying Conversations</h2>
-                <p className="text-sm text-slate-500 mb-8">Reading context, determining sentiment, and assigning categories...</p>
+                <h2 className="text-2xl font-bold mb-2">Gemini is Auditing Conversations</h2>
+                <p className="text-sm text-slate-500 mb-8">Reading context, scoring against rubric, and assigning categories...</p>
                 
                 <div className="bg-slate-200 rounded-full h-2.5 mb-3 overflow-hidden">
                   <div 
@@ -513,6 +607,9 @@ ${convoText}`;
                     <div className="space-y-2">
                       {results.slice(-4).reverse().map((r, i) => (
                         <div key={i} className="bg-white p-3 rounded-lg shadow-sm border border-slate-100 flex items-center gap-3 animate-in slide-in-from-right-4 fade-in">
+                          <div className={`font-bold text-xs w-8 text-center ${r.totalScore >= 80 ? 'text-emerald-600' : r.totalScore >= 60 ? 'text-orange-500' : 'text-red-600'}`}>
+                            {r.totalScore || 0}
+                          </div>
                           <span 
                             className="text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap"
                             style={{ background: CATEGORY_BG[r.category] || "#f1f5f9", color: CATEGORY_COLORS[r.category] || "#64748b", borderColor: `${CATEGORY_COLORS[r.category]}33` || "#e2e8f0" }}
@@ -536,7 +633,7 @@ ${convoText}`;
                 {/* KPI Cards */}
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
                   {[
-                    { label: "Total Classified", value: results.length, icon: "💬", color: "border-slate-200" },
+                    { label: "Total Audited", value: results.length, icon: "💬", color: "border-slate-200" },
                     { label: "Avg QA Score", value: `${avgScore}%`, icon: "🎯", color: "border-purple-400", valColor: avgScore >= 80 ? "text-purple-600" : "text-orange-500" },
                     { label: "Needs Attention (Negative)", value: sentCounts.Negative || 0, icon: "⚠️", color: "border-red-400", valColor: "text-red-500" },
                     { label: "Positive Feedback", value: sentCounts.Positive || 0, icon: "✅", color: "border-emerald-400", valColor: "text-emerald-500" },
@@ -626,8 +723,8 @@ ${convoText}`;
                               <div className="font-semibold text-sm text-slate-800 truncate">{r.name}</div>
                               <div className="text-[10px] text-slate-400 mt-0.5 truncate">
                                 {r.studentId && <span className="text-slate-500">#{r.studentId} · </span>}
+                                {r.owner && <span className="text-indigo-500 font-medium">@ {r.owner} · </span>}
                                 {r.messages.length} msgs
-                                {r.currentBatch && ` · ${r.currentBatch}`}
                               </div>
                             </div>
                             <div className="col-span-3 text-xs text-slate-600 leading-snug pr-4">{r.summary}</div>
