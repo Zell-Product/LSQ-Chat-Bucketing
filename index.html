@@ -1,1 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WhatsApp Chat Bucketing & QA</title>
+  
+  <!-- Load Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Load React & ReactDOM -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  
+  <!-- Load Babel for in-browser JSX compilation -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+  <!-- React App Root -->
+  <div id="root"></div>
 
+  <script type="text/babel">
+    const { useState, useRef, useCallback } = React;
+
+    // ── Configuration & Taxonomy ──────────────────────────────────────────────────
+    
+    // IMPORTANT: When running this locally, you must provide your Gemini API key here!
+    const apiKey = ""; 
+
+    const TAXONOMY = {
+      "Refund": ["Service & Quality Gap", "Sales & Admissions Issue", "Personal & Medical", "Financial & Pricing"],
+      "Tech & Platform/LMS": ["Account & Login Access", "Content & Class Visibility", "Validity & Transfers", "Tech Support & Platforms"],
+      "Registrations & Exams": ["Registration & Delays", "Exemptions", "Documents & Verification", "Registration Codes & IR"],
+      "Operations & Logistics": ["Onboarding Journey", "Books & Dispatch", "Batch Allocation & Timings"],
+      "New Leads & Referrals": ["New Lead", "Referral"],
+      "Academics & Careers": ["Academic Doubts", "Placements"],
+      "Service": ["Faculty Issue", "Mentor Related Query", "General Queries"],
+    };
+
+    const CATEGORY_COLORS = {
+      "Refund": "#ef4444",
+      "Tech & Platform/LMS": "#8b5cf6",
+      "Registrations & Exams": "#f59e0b",
+      "Operations & Logistics": "#3b82f6",
+      "New Leads & Referrals": "#10b981",
+      "Academics & Careers": "#06b6d4",
+      "Service": "#ec4899",
+    };
+
+    const CATEGORY_BG = {
+      "Refund": "#fef2f2",
+      "Tech & Platform/LMS": "#f5f3ff",
+      "Registrations & Exams": "#fffbeb",
+      "Operations & Logistics": "#eff6ff",
+      "New Leads & Referrals": "#f0fdf4",
+      "Academics & Careers": "#ecfeff",
+      "Service": "#fdf2f8",
+    };
+
+    // ── Helpers & Data Processing ─────────────────────────────────────────────────
+
+    // Dynamically load PapaParse to ensure it works without npm install
+    function parseCSV(file) {
+      return new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = "https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js";
+        script.onload = () => {
+          window.Papa.parse(file, {
+            header: true,
+            skipEmptyLines: true,
+            complete: (r) => resolve(r.data),
+            error: reject,
+          });
+        };
+        script.onerror = () => reject(new Error("Failed to load CSV parser."));
+        if (window.Papa) {
+          script.onload();
+        } else {
+          document.head.appendChild(script);
+        }
+      });
+    }
+
+    function buildConversations(rows) {
+      const map = {};
+      rows.forEach((row) => {
+        const pid = row["Prospect Id"] || row["prospect_id"] || "unknown";
+        if (!map[pid]) {
+          map[pid] = {
+            prospectId: pid,
+            studentId: row["Student ID"] || row["student_id"] || row["Student Id"] || "",
+            name: row["Lead Name"] || row["lead_name"] || row["First Name"] || "Unknown",
+            email: row["Email Address"] || "",
+            phone: row["Phone Number"] || "",
+            leadStage: row["Lead Stage"] || row["BD Lead Stage"] || "",
+            currentBatch: row["Current Batch"] || "",
+            messages: [],
+          };
+        }
+        const note = (row["Notes"] || "").trim();
+        if (note && note.length > 2) {
+          map[pid].messages.push({
+            date: row["Activity Date"] || "",
+            direction: row["Direction"] || "unknown",
+            note,
+          });
+        }
+      });
+
+      // Sort messages by date, keep only convos with at least 1 human message
+      return Object.values(map)
+        .map((c) => ({
+          ...c,
+          messages: c.messages.sort((a, b) => new Date(a.date) - new Date(b.date)),
+        }))
+        .filter((c) => c.messages.some((m) => !m.note.includes("_auto:") || m.direction.toLowerCase() === "inbound" || m.direction.toLowerCase() === "received"));
+    }
+
+    function conversationToText(conv) {
+      return conv.messages
+        .slice(0, 30) // cap at 30 messages to stay within token limits
+        .map((m) => `[${m.direction || "?"} | ${m.date}] ${m.note.slice(0, 400)}`)
+        .join("\n");
+    }
+
+    async function classifyConversation(conv, attempt = 0) {
+      const delays = [1000, 2000, 4000, 8000, 16000]; // Exponential backoff for API limits
+      const convoText = conversationToText(conv);
+      
+      const taxonomyStr = Object.entries(TAXONOMY)
+        .map(([cat, subs]) => `${cat}: ${subs.join(", ")}`)
+        .join("\n");
+
+      const prompt = `Classify and score this customer support conversation.
+Taxonomy:
+${taxonomyStr}
+
+Scoring Rubric:
+1. Accuracy (20 or 0): Is info 100% correct?
+2. Resolution (20, 10, or 0): Solved completely + anticipated next question (20), answered direct but missed unspoken (10), missed parts (0).
+3. Tone (15, 7, or 0): Empathetic/warm (15), Neutral (7), Cold/rude (0).
+4. Listening (10, 5, or 0): Seamless (10), Asked to repeat minor detail (5), Asked for provided info (0).
+5. Speed (10, 5, or 0): Fast/holds managed (10), delayed (5), breached/unacceptable (0). Look at timestamps.
+6. CRM/Auth (10, 5, or 0): Verified ID/Logged correctly (10), Logged but wrong/partial (5), Forgot (0). Infer from context.
+7. Formatting (5, 2, or 0): Chunked/bold/bullets (5), Cluttered (2), Wall of text (0).
+8. Grammar (5, 2, or 0): Professional/no slang (5), minor typos (2), heavy errors/slang (0).
+9. Closing (5 or 0): Explicit confirmation/proper sign-off (5), Abrupt/ghosted (0).
+
+Conversation (Student: ${conv.name}, Stage: ${conv.leadStage || "N/A"}):
+${convoText}`;
+
+      const payload = {
+        contents: [{ parts: [{ text: prompt }] }],
+        systemInstruction: { 
+          parts: [{ 
+            text: "You are an expert QA auditor for an education institute's customer support. Classify the conversation, then score the agent based on the rubric. Calculate the total score." 
+          }] 
+        },
+        generationConfig: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: "OBJECT",
+            properties: {
+              category: { type: "STRING" },
+              subcategory: { type: "STRING" },
+              summary: { type: "STRING", description: "1 concise sentence summary of the issue" },
+              sentiment: { type: "STRING", enum: ["Positive", "Neutral", "Negative"] },
+              scores: {
+                type: "OBJECT",
+                properties: {
+                  accuracy: { type: "INTEGER", description: "20 or 0" },
+                  resolution: { type: "INTEGER", description: "20, 10, or 0" },
+                  tone: { type: "INTEGER", description: "15, 7, or 0" },
+                  listening: { type: "INTEGER", description: "10, 5, or 0" },
+                  speed: { type: "INTEGER", description: "10, 5, or 0" },
+                  crm: { type: "INTEGER", description: "10, 5, or 0" },
+                  formatting: { type: "INTEGER", description: "5, 2, or 0" },
+                  grammar: { type: "INTEGER", description: "5, 2, or 0" },
+                  closing: { type: "INTEGER", description: "5 or 0" }
+                }
+              },
+              totalScore: { type: "INTEGER", description: "Sum of all scores (max 100)" },
+              qaFeedback: { type: "STRING", description: "1-2 sentences of specific feedback for the agent" }
+            },
+            required: ["category", "subcategory", "summary", "sentiment", "scores", "totalScore", "qaFeedback"]
+          }
+        }
+      };
+
+      try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const data = await response.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        
+        if (!text) throw new Error("Empty response");
+        
+        return JSON.parse(text);
+      } catch (err) {
+        if (attempt < delays.length) {
+          await new Promise(r => setTimeout(r, delays[attempt]));
+          return classifyConversation(conv, attempt + 1);
+        }
+        return { 
+          category: "Service", subcategory: "General Queries", summary: "Classification failed: " + err.message, sentiment: "Neutral",
+          scores: { accuracy: 0, resolution: 0, tone: 0, listening: 0, speed: 0, crm: 0, formatting: 0, grammar: 0, closing: 0 },
+          totalScore: 0, qaFeedback: "Failed to process due to API limits."
+        };
+      }
+    }
+
+    // Generic LLM Text Call for interactive features
+    async function callGeminiText(prompt, sysInstr) {
+      if (!apiKey) throw new Error("API Key is missing. Please add it to the code.");
+      const payload = {
+        contents: [{ parts: [{ text: prompt }] }],
+        systemInstruction: { parts: [{ text: sysInstr }] }
+      };
+      
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) throw new Error(`API Error: ${response.status}`);
+      const data = await response.json();
+      return data.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated.";
+    }
+
+    // ── Components ────────────────────────────────────────────────────────────────
+
+    function MiniBar({ data, total }) {
+      return (
+        <div className="flex flex-col gap-2">
+          {Object.entries(data)
+            .sort(([, a], [, b]) => b - a)
+            .map(([cat, count]) => (
+              <div key={cat} className="flex items-center gap-2">
+                <div className="w-32 text-[11px] text-slate-500 text-right shrink-0 truncate" title={cat}>{cat}</div>
+                <div className="flex-1 bg-slate-100 rounded h-4 overflow-hidden">
+                  <div
+                    style={{
+                      width: `${(count / total) * 100}%`,
+                      background: CATEGORY_COLORS[cat] || "#94a3b8",
+                    }}
+                    className="h-full rounded transition-all duration-700 ease-out flex items-center justify-end pr-1.5"
+                  >
+                    {count > 0 && <span className="text-[9px] text-white font-bold">{count}</span>}
+                  </div>
+                </div>
+                <div className="w-8 text-[11px] text-slate-400 text-right">{Math.round((count / total) * 100)}%</div>
+              </div>
+            ))}
+        </div>
+      );
+    }
+
+    function DonutChart({ data, total }) {
+      const cats = Object.entries(data).sort(([, a], [, b]) => b - a);
+      let cumulative = 0;
+      const r = 60, cx = 70, cy = 70, stroke = 22;
+      const circumference = 2 * Math.PI * r;
+      
+      const slices = cats.map(([cat, count]) => {
+        const pct = count / total;
+        const offset = circumference * (1 - cumulative - pct);
+        cumulative += pct;
+        return { cat, count, pct, offset, dasharray: `${circumference * pct} ${circumference * (1 - pct)}` };
+      });
+
+      return (
+        <svg viewBox="0 0 140 140" width={140} height={140}>
+          <circle cx={cx} cy={cy} r={r} fill="none" stroke="#f1f5f9" strokeWidth={stroke} />
+          {slices.map(({ cat, dasharray, offset }) => (
+            <circle
+              key={cat}
+              cx={cx} cy={cy} r={r}
+              fill="none"
+              stroke={CATEGORY_COLORS[cat] || "#94a3b8"}
+              strokeWidth={stroke}
+              strokeDasharray={dasharray}
+              strokeDashoffset={offset}
+              className="transition-all duration-700 ease-out origin-center -rotate-90"
+            />
+          ))}
+          <text x={cx} y={cy - 4} textAnchor="middle" fontSize={22} fontWeight={800} fill="#1e293b">{total}</text>
+          <text x={cx} y={cy + 12} textAnchor="middle" fontSize={10} fill="#94a3b8">chats</text>
+        </svg>
+      );
+    }
+
+    function SentimentBadge({ s }) {
+      const cfg = { 
+        Positive: ["#10b981", "#f0fdf4", "😊"], 
+        Neutral: ["#f59e0b", "#fffbeb", "😐"], 
+        Negative: ["#ef4444", "#fef2f2", "😞"] 
+      };
+      const [color, bg, emoji] = cfg[s] || cfg.Neutral;
+      
+      return (
+        <span 
+          style={{ background: bg, color, border: `1px solid ${color}33` }}
+          className="text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap"
+        >
+          {emoji} {s}
+        </span>
+      );
+    }
+
+    // ── Main App ──────────────────────────────────────────────────────────────────
+
+    function App() {
+      const [stage, setStage] = useState("upload"); // upload | processing | done
+      const [conversations, setConversations] = useState([]);
+      const [results, setResults] = useState([]);
+      const [progress, setProgress] = useState(0);
+      const [total, setTotal] = useState(0);
+      
+      // Feature states
+      const [execSummary, setExecSummary] = useState("");
+      const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
+      const [isDraftingStates, setIsDraftingStates] = useState({});
+      
+      // Filters
+      const [search, setSearch] = useState("");
+      const [filterCat, setFilterCat] = useState("All");
+      const [filterSent, setFilterSent] = useState("All");
+      
+      const [expanded, setExpanded] = useState(null);
+      const [error, setError] = useState("");
+      
+      const fileRef = useRef();
+      const abortRef = useRef(false);
+
+      const handleFiles = useCallback(async (files) => {
+        setError("");
+        try {
+          let allRows = [];
+          for (const f of files) {
+            const rows = await parseCSV(f);
+            allRows = allRows.concat(rows);
+          }
+          
+          const convos = buildConversations(allRows);
+          
+          if (convos.length === 0) {
+            setError("No valid conversations found. Make sure the CSV has 'Prospect Id' and 'Notes'.");
+            return;
+          }
+
+          setConversations(convos);
+          setTotal(convos.length);
+          setResults([]);
+          setExecSummary("");
+          setProgress(0);
+          setStage("processing");
+          abortRef.current = false;
+
+          const out = [];
+          for (let i = 0; i < convos.length; i++) {
+            if (abortRef.current) break;
+            const conv = convos[i];
+            
+            const res = await classifyConversation(conv);
+            out.push({ ...conv, ...res });
+            
+            setProgress(i + 1);
+            setResults([...out]);
+            
+            // Gentle delay to respect API rate limits alongside exponential backoff
+            if (i < convos.length - 1) await new Promise((r) => setTimeout(r, 400));
+          }
+          if (!abortRef.current) setStage("done");
+          
+        } catch (e) {
+          setError("Failed to parse CSV: " + e.message);
+        }
+      }, []);
+
+      const onDrop = useCallback((e) => {
+        e.preventDefault();
+        handleFiles([...e.dataTransfer.files].filter((f) => f.name.endsWith(".csv")));
+      }, [handleFiles]);
+
+      const exportCSV = () => {
+        const headers = [
+          "Prospect Id", "Student ID", "Name", "Email", "Phone", "Lead Stage", "Current Batch", 
+          "Category", "Subcategory", "Sentiment", "Summary", "Message Count", 
+          "QA Score", "QA Feedback", "Score: Accuracy", "Score: Resolution", "Score: Tone", 
+          "Score: Listening", "Score: Speed", "Score: CRM", "Score: Formatting", "Score: Grammar", "Score: Closing"
+        ];
+        const rows = results.map((r) => {
+          const s = r.scores || {};
+          return [
+            r.prospectId, r.studentId, r.name, r.email, r.phone, r.leadStage, r.currentBatch,
+            r.category, r.subcategory, r.sentiment, `"${(r.summary || "").replace(/"/g, "'")}"`, r.messages.length,
+            r.totalScore || 0, `"${(r.qaFeedback || "").replace(/"/g, "'")}"`,
+            s.accuracy || 0, s.resolution || 0, s.tone || 0, s.listening || 0, s.speed || 0, s.crm || 0, s.formatting || 0, s.grammar || 0, s.closing || 0
+          ];
+        });
+        const csv = [headers, ...rows].map((r) => r.join(",")).join("\n");
+        const blob = new Blob([csv], { type: "text/csv" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a"); 
+        a.href = url; 
+        a.download = "whatsapp_categorized_chats.csv"; 
+        a.click();
+      };
+
+      // LLM Feature: Generate Executive Summary
+      const handleGenerateSummary = async () => {
+        setIsGeneratingSummary(true);
+        try {
+            const prompt = `Here is the data for our customer support team's recent batch of WhatsApp chats:
+            Total Chats: ${results.length}
+            Average QA Score: ${avgScore}%
+            Category Breakdown: ${JSON.stringify(catCounts)}
+            Sentiment Analysis: ${JSON.stringify(sentCounts)}
+            
+            Write a 3-sentence executive summary of our performance. Highlight any specific areas of concern (like low QA scores or high negative sentiment) and praise good metrics. Be direct and professional.`;
+            
+            const summary = await callGeminiText(prompt, "You are a Customer Support Operations
