@@ -1,186 +1,293 @@
-import React, { useState, useMemo, useRef } from 'react';
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zell - Customer Service QA</title>
+  
+  <!-- Load React and ReactDOM from CDN -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  
+  <!-- Load Babel to transpile JSX in the browser -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-// --- UTILS: CSV PARSER ---
-const parseCSV = (str) => {
-  const arr = [];
-  let quote = false;
-  let row = 0, col = 0;
-  for (let c = 0; c < str.length; c++) {
-    let cc = str[c], nc = str[c + 1];
-    arr[row] = arr[row] || [];
-    arr[row][col] = arr[row][col] || '';
+  <!-- Extracted Styles -->
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Sora:wght@300;400;500;600;700&display=swap');
+    :root{--bg:#0b0f1a;--surface:#111827;--card:#161e2e;--border:#1f2d45;--accent:#00d4a8;--accent2:#3b82f6;--warn:#fbbf24;--danger:#f87171;--success:#34d399;--text:#f8fafc;--muted:#94a3b8;--mono:'Space Mono',monospace;--sans:'Sora',sans-serif;}
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;overflow-x:hidden;}
+    body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,212,168,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,212,168,.03) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;z-index:0;}
+    .wrap{position:relative;z-index:1;max-width:1500px;margin:0 auto;padding:0 24px;}
+    header{border-bottom:1px solid var(--border);padding:18px 0;background:rgba(11,15,26,.93);backdrop-filter:blur(14px);position:sticky;top:0;z-index:100;}
+    .header-inner{display:flex;align-items:center;justify-content:space-between;}
+    .logo{display:flex;align-items:center;gap:12px;}
+    .logo-icon{width:38px;height:38px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;}
+    .logo-text{font-size:17px;font-weight:600;letter-spacing:-.3px;}
+    .logo-sub{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:1px;}
+    .status-pill{font-family:var(--mono);font-size:11px;padding:5px 12px;border-radius:20px;border:1px solid var(--border);color:var(--muted);letter-spacing:.5px;}
+    .upload-section{padding:60px 0 40px;}
+    .upload-hero{text-align:center;margin-bottom:40px;}
+    .upload-hero h1{font-size:42px;font-weight:700;letter-spacing:-1px;background:linear-gradient(135deg,#fff 30%,var(--accent));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:12px;}
+    .upload-hero p{color:var(--muted);font-size:15px;max-width:540px;margin:0 auto;line-height:1.6;}
+    .dropzone{border:2px dashed var(--border);border-radius:20px;padding:56px 40px;text-align:center;cursor:pointer;transition:all .3s;background:var(--card);position:relative;overflow:hidden;}
+    .dropzone::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(0,212,168,.04) 0%,transparent 70%);pointer-events:none;}
+    .dropzone:hover,.dropzone.drag-over{border-color:var(--accent);background:rgba(0,212,168,.04);}
+    .dropzone-icon{font-size:48px;margin-bottom:14px;}
+    .dropzone h3{font-size:18px;font-weight:600;margin-bottom:8px;}
+    .dropzone p{color:var(--muted);font-size:13px;line-height:1.6;}
+    .col-chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:14px;}
+    .col-chip{font-family:var(--mono);font-size:11px;padding:4px 10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--accent);}
+    .upload-btn{display:inline-block;margin-top:20px;padding:10px 28px;background:var(--accent);color:#000;border-radius:8px;font-weight:600;font-size:14px;cursor:pointer;transition:opacity .2s;}
+    .upload-btn:hover{opacity:.85;}
+    .stats-bar{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;padding:32px 0 20px;}
+    .stat-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;position:relative;overflow:hidden;}
+    .stat-card::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;background:var(--accent);}
+    .stat-card.blue::after{background:var(--accent2);}
+    .stat-card.warn::after{background:var(--warn);}
+    .stat-card.danger::after{background:var(--danger);}
+    .stat-card.purple::after{background:#8b5cf6;}
+    .stat-label{font-size:11px;color:var(--muted);text-transform:uppercase;font-family:var(--mono);letter-spacing:.5px;margin-bottom:8px;}
+    .stat-value{font-size:32px;font-weight:700;letter-spacing:-1px;color:var(--muted);}
+    .stat-sub{font-size:11px;color:var(--muted);margin-top:4px;}
+    .filters{display:flex;flex-wrap:wrap;gap:10px;padding:0 0 20px;align-items:center;}
+    .filter-label{font-size:12px;color:var(--muted);font-family:var(--mono);}
+    select,input[type="text"]{background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 14px;font-size:13px;font-family:var(--sans);outline:none;transition:border-color .2s;}
+    select option { background: var(--card); color: var(--text); }
+    select:focus,input[type="text"]:focus{border-color:var(--accent);}
+    .btn{padding:8px 18px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-family:var(--sans);font-weight:500;transition:all .2s;}
+    .btn-primary{background:var(--accent);color:#000;}
+    .btn-primary:hover{opacity:.85;}
+    .btn-ghost{background:var(--card);border:1px solid var(--border);color:var(--text);}
+    .btn-ghost:hover{border-color:var(--accent);color:var(--accent);}
+    .table-section{padding-bottom:60px;}
+    .table-wrap{border:1px solid var(--border);border-radius:16px;overflow:hidden;background:var(--surface);}
+    table{width:100%;border-collapse:collapse;}
+    thead{background:var(--surface);border-bottom:1px solid var(--border);}
+    th{padding:13px 14px;font-size:11px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.8px;color:var(--muted);text-align:left;white-space:nowrap;cursor:pointer;user-select:none;}
+    th:hover{color:var(--accent);}
+    tbody tr{border-bottom:1px solid var(--border);transition:background .15s;cursor:pointer;}
+    tbody tr:last-child{border-bottom:none;}
+    tbody tr:hover{background:rgba(0,212,168,.03);}
+    tbody tr.expanded-open{background:rgba(0,212,168,.05);}
+    td{padding:13px 14px;font-size:13px;vertical-align:middle;}
+    .prospect-id{font-family:var(--mono);font-size:11px;color:var(--accent);font-weight:700;}
+    .student-id-cell{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:2px;}
+    .lead-name{font-weight:600;font-size:13px;color:var(--muted);}
+    .lead-stage-cell{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:2px;}
+    .agent-cell{font-weight:500;font-size:12px;color:var(--muted);}
+    .cat-badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap;}
+    .subcat-text{font-size:11px;color:var(--muted);margin-top:3px;}
+    .cat-refund{background:rgba(239,68,68,.15);color:#fca5a5;}
+    .cat-tech{background:rgba(59,130,246,.15);color:#93c5fd;}
+    .cat-reg{background:rgba(139,92,246,.15);color:#c4b5fd;}
+    .cat-ops{background:rgba(245,158,11,.15);color:#fcd34d;}
+    .cat-leads{background:rgba(16,185,129,.15);color:#6ee7b7;}
+    .cat-academic{background:rgba(236,72,153,.15);color:#f9a8d4;}
+    .cat-service{background:rgba(0,212,168,.15);color:#5eead4;}
+    .score-display{font-family:var(--mono);font-weight:700;font-size:18px;}
+    .score-na{font-family:var(--mono);font-size:11px;color:var(--muted);padding:4px 10px;border:1px solid var(--border);border-radius:6px;}
+    .score-good{color:var(--success);}
+    .score-mid{color:var(--warn);}
+    .score-bad{color:var(--danger);}
+    .flag-badge{display:inline-block;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:600;font-family:var(--mono);}
+    .flag-badge.flagged{background:rgba(239,68,68,.15);color:var(--danger);}
+    .flag-badge.autofail{background:rgba(239,68,68,.2);color:#fca5a5;}
+    .msg-count{font-family:var(--mono);font-size:11px;color:var(--muted);}
+    .expanded-row{background:var(--bg);}
+    .expanded-content{padding:24px;display:grid;grid-template-columns:1fr 1fr;gap:20px; cursor: default;}
+    .exp-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;}
+    .exp-card h4{font-size:11px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:14px;}
+    .meta-bar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;}
+    .meta-chip{font-family:var(--mono);font-size:10px;padding:4px 10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;}
+    .meta-chip .lbl{color:var(--muted);}
+    .chat-thread{max-height:340px;overflow-y:auto;display:flex;flex-direction:column;gap:8px; padding-right:8px;}
+    .chat-bubble{max-width:82%;padding:10px 14px;border-radius:12px;font-size:12px;line-height:1.6;color:var(--muted);}
+    .bubble-in{background:var(--surface);border:1px solid var(--border);align-self:flex-start;border-bottom-left-radius:4px;}
+    .bubble-out{background:rgba(0,212,168,.1);border:1px solid rgba(0,212,168,.2);align-self:flex-end;border-bottom-right-radius:4px;}
+    .bubble-meta{font-size:10px;color:var(--muted);font-family:var(--mono);margin-bottom:3px;}
+    .bubble-out .bubble-meta{text-align:right;}
+    .score-total-row{display:flex;align-items:center;gap:16px;margin-bottom:14px;padding:12px;background:var(--surface);border-radius:10px;}
+    .score-big{font-size:40px;font-weight:700;font-family:var(--mono);}
+    .sbar-track{flex:1;background:var(--bg);border-radius:4px;height:6px;overflow:hidden;}
+    .sbar-fill{height:6px;border-radius:4px;transition:width .6s;}
+    .score-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+    .score-item{background:var(--surface);border-radius:8px;padding:12px;}
+    .si-label{font-size:10px;color:var(--muted);font-family:var(--mono);margin-bottom:5px;}
+    .si-val{font-size:20px;font-weight:700;font-family:var(--mono);}
+    .si-max{font-size:10px;color:var(--muted);}
+    .si-track{background:var(--bg);border-radius:3px;height:3px;margin-top:6px;overflow:hidden;}
+    .si-fill{height:3px;border-radius:3px;}
+    .insufficient-badge{font-size:11px;color:var(--warn);font-family:var(--mono);padding:12px 16px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);border-radius:8px;line-height:1.7;}
+    .feedback-text{font-size:13px;line-height:1.75;color:var(--text);padding:12px 16px;background:var(--surface);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;}
+    .flag-detail{padding:12px 16px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);border-radius:8px;font-size:12px;color:#fca5a5;line-height:1.7;margin-top:14px;}
+    .right-col{display:flex;flex-direction:column;gap:14px;}
+    .table-footer{text-align:center;padding:14px 0;color:var(--muted);font-family:var(--mono);font-size:11px;}
+    .empty-state{text-align:center;padding:60px 20px;color:var(--muted);font-family:var(--mono);font-size:12px;}
+    ::-webkit-scrollbar{width:5px;height:5px;}
+    ::-webkit-scrollbar-track{background:transparent;}
+    ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
     
-    if (cc === '"' && quote && nc === '"') { arr[row][col] += cc; ++c; continue; }
-    if (cc === '"') { quote = !quote; continue; }
-    if (cc === ',' && !quote) { ++col; continue; }
-    if (cc === '\r' && nc === '\n' && !quote) { ++row; col = 0; ++c; continue; }
-    if (cc === '\n' && !quote) { ++row; col = 0; continue; }
-    if (cc === '\r' && !quote) { ++row; col = 0; continue; }
-    
-    arr[row][col] += cc;
-  }
-  return arr;
-};
+    /* Gemini specific styling */
+    .gemini-card { background: linear-gradient(145deg, rgba(20,30,50,0.8) 0%, rgba(15,20,35,0.8) 100%); border: 1px solid rgba(59, 130, 246, 0.4); border-radius: 12px; padding: 20px; position: relative; overflow: hidden; margin-top: 14px; }
+    .gemini-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, #3b82f6, #8b5cf6, #ec4899); }
+    .gemini-btn { background: linear-gradient(90deg, #3b82f6, #8b5cf6); color: white; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: opacity 0.2s; font-family: var(--sans); font-size: 13px; }
+    .gemini-btn:hover { opacity: 0.9; }
+    .gemini-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .gemini-spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3); border-radius: 50%; border-top-color: white; animation: spin 1s ease-in-out infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .gemini-section-title { font-size: 12px; font-weight: 600; color: #93c5fd; margin: 16px 0 6px 0; text-transform: uppercase; letter-spacing: 0.5px; }
+    .gemini-content { font-size: 13px; color: var(--text); line-height: 1.6; }
+    .gemini-email-box { background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); padding: 12px; border-radius: 8px; font-family: var(--sans); font-size: 12.5px; color: var(--muted); white-space: pre-wrap; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <!-- This is where React will inject the application -->
+  <div id="root"></div>
 
-// --- CORE LOGIC: MOCK "AI" EVALUATOR ---
-const evaluateThread = (thread) => {
-  const messages = thread.messages;
-  const outbounds = messages.filter(m => m.direction.toLowerCase() === 'outbound');
-  const inbounds = messages.filter(m => m.direction.toLowerCase() === 'inbound');
-  const allText = messages.map(m => m.text.toLowerCase()).join(' ');
-  const owner = thread.owner;
+  <!-- React Application Logic -->
+  <script type="text/babel">
+    const { useState, useMemo, useRef } = React;
 
-  // 1. INITIALIZE RESULT OBJECT
-  let result = {
-    isScored: true,
-    category: "Service",
-    subcategory: "General Queries",
-    scores: {
-      accuracy: 20, resolution: 20, tone: 15, listening: 10,
-      speed: 10, crm: 10, formatting: 5, grammar: 5, closing: 5
-    },
-    totalScore: 100,
-    feedback: "",
-    isFlagged: false,
-    flagReason: "",
-    autoFail: false
-  };
+    // --- GEMINI API CONFIG ---
+    // Make sure to add your Google Gemini API Key here before pushing to GitHub Pages!
+    const apiKey = "";
 
-  // 2. CHECK SCORING CONDITION (<= 1 Outbound)
-  if (outbounds.length <= 1) {
-    result.isScored = false;
-    result.totalScore = "N/A";
-    result.isFlagged = true;
-    result.flagReason = "Not Scored - Insufficient Agent Interaction";
-    return result;
-  }
+    // --- UTILS: CSV PARSER ---
+    const parseCSV = (str) => {
+      const arr = [];
+      let quote = false;
+      let row = 0, col = 0;
+      for (let c = 0; c < str.length; c++) {
+        let cc = str[c], nc = str[c + 1];
+        arr[row] = arr[row] || [];
+        arr[row][col] = arr[row][col] || '';
+        
+        if (cc === '"' && quote && nc === '"') { arr[row][col] += cc; ++c; continue; }
+        if (cc === '"') { quote = !quote; continue; }
+        if (cc === ',' && !quote) { ++col; continue; }
+        if (cc === '\r' && nc === '\n' && !quote) { ++row; col = 0; ++c; continue; }
+        if (cc === '\n' && !quote) { ++row; col = 0; continue; }
+        if (cc === '\r' && !quote) { ++row; col = 0; continue; }
+        
+        arr[row][col] += cc;
+      }
+      return arr;
+    };
 
-  // 3. CATEGORIZATION & HARD OVERRIDES
-  if (["Amisha Suthar", "Priyal Bhargava", "Sehar Sayed"].includes(owner)) {
-    result.category = "Operations & Logistics";
-    result.subcategory = "Onboarding Journey";
-  } else if (allText.includes("mock") || allText.includes("mock exam") || allText.includes("mock test")) {
-    result.category = "Academics & Careers";
-    result.subcategory = "Academic Doubts";
-  } else if (allText.includes("exam") || allText.includes("fee") || allText.includes("book") || allText.includes("reimbursement")) {
-    result.category = "Registrations & Exams";
-    result.subcategory = "Registration & Delays";
-  } else {
-    if (allText.match(/refund|unhappy|medical|emergency|discount/)) {
-      result.category = "Refund";
-      result.subcategory = allText.includes("medical") ? "Personal & Medical" : "Service & Quality Gap";
-    } else if (allText.match(/password|login|lms|bug|app|recording/)) {
-      result.category = "Tech & Platform/LMS";
-      result.subcategory = allText.includes("password") ? "Account & Login Access" : "Tech Support & Platforms";
-    } else if (allText.match(/dispatch|tracking|delivery|batch/)) {
-      result.category = "Operations & Logistics";
-      result.subcategory = allText.includes("batch") ? "Batch Allocation & Timings" : "Books & Dispatch";
-    }
-  }
+    // --- CORE LOGIC: MOCK "AI" EVALUATOR ---
+    const evaluateThread = (thread) => {
+      const messages = thread.messages;
+      const outbounds = messages.filter(m => m.direction.toLowerCase() === 'outbound');
+      const inbounds = messages.filter(m => m.direction.toLowerCase() === 'inbound');
+      const allText = messages.map(m => m.text.toLowerCase()).join(' ');
+      const owner = thread.owner;
 
-  // 4. HEURISTIC SCORING 
-  if (allText.includes("i don't know") || allText.includes("wrong info")) {
-    result.scores.accuracy = 0; 
-  }
-  if (inbounds.length > 3 && !allText.includes("resolved") && !allText.includes("fixed")) {
-    result.scores.resolution = 10; 
-    if (allText.includes("still not working")) result.scores.resolution = 0;
-  }
+      let result = {
+        isScored: true, category: "Service", subcategory: "General Queries",
+        scores: { accuracy: 20, resolution: 20, tone: 15, listening: 10, speed: 10, crm: 10, formatting: 5, grammar: 5, closing: 5 },
+        totalScore: 100, feedback: "", isFlagged: false, flagReason: "", autoFail: false
+      };
 
-  const outboundText = outbounds.map(m => m.text.toLowerCase()).join(' ');
-  if (outboundText.match(/sorry|apologize|understand|glad/)) {
-    result.scores.tone = 15;
-  } else if (outboundText.match(/no|can't|won't|you need to/)) {
-    result.scores.tone = 7; 
-    if (outboundText.length < 50 && outbounds.length > 2) result.scores.tone = 0; 
-  }
-  
-  if (outboundText.includes("what is your") && inbounds[0]?.text.includes(outboundText.split("what is your")[1]?.split(" ")[1])) {
-    result.scores.listening = 0; 
-  } else if (outbounds.length > 4) {
-    result.scores.listening = 5; 
-  }
+      if (outbounds.length <= 1) {
+        result.isScored = false; result.totalScore = "N/A"; result.isFlagged = true;
+        result.flagReason = "Not Scored - Insufficient Agent Interaction";
+        return result;
+      }
 
-  let maxGap = 0;
-  for (let i = 1; i < messages.length; i++) {
-    if (messages[i].direction === 'Outbound' && messages[i-1].direction === 'Inbound') {
-      const gap = (new Date(messages[i].timestamp) - new Date(messages[i-1].timestamp)) / 60000;
-      if (gap > maxGap) maxGap = gap;
-    }
-  }
-  if (maxGap > 5) result.scores.speed = 0;
-  else if (maxGap > 2) result.scores.speed = 5;
-  
-  if (outboundText.includes("ticket") || outboundText.includes("checked your account")) {
-    result.scores.crm = 10;
-  } else if (result.category === "Tech & Platform/LMS") {
-    result.scores.crm = 0; 
-  }
+      if (["Amisha Suthar", "Priyal Bhargava", "Sehar Sayed"].includes(owner)) {
+        result.category = "Operations & Logistics"; result.subcategory = "Onboarding Journey";
+      } else if (allText.includes("mock") || allText.includes("mock exam") || allText.includes("mock test")) {
+        result.category = "Academics & Careers"; result.subcategory = "Academic Doubts";
+      } else if (allText.includes("exam") || allText.includes("fee") || allText.includes("book") || allText.includes("reimbursement")) {
+        result.category = "Registrations & Exams"; result.subcategory = "Registration & Delays";
+      } else {
+        if (allText.match(/refund|unhappy|medical|emergency|discount/)) {
+          result.category = "Refund"; result.subcategory = allText.includes("medical") ? "Personal & Medical" : "Service & Quality Gap";
+        } else if (allText.match(/password|login|lms|bug|app|recording/)) {
+          result.category = "Tech & Platform/LMS"; result.subcategory = allText.includes("password") ? "Account & Login Access" : "Tech Support & Platforms";
+        } else if (allText.match(/dispatch|tracking|delivery|batch/)) {
+          result.category = "Operations & Logistics"; result.subcategory = allText.includes("batch") ? "Batch Allocation & Timings" : "Books & Dispatch";
+        }
+      }
 
-  if (outbounds.some(m => m.text.length > 300 && !m.text.includes("\n"))) {
-    result.scores.formatting = 0; 
-  } else if (outbounds.some(m => m.text.length > 150)) {
-    result.scores.formatting = 2; 
-  }
-  
-  if (outboundText.match(/\b(u|pls|thx|ur)\b/)) {
-    result.scores.grammar = 0; 
-  } else if (outboundText.match(/[a-z][.?!][a-z]/)) {
-    result.scores.grammar = 2; 
-  }
+      if (allText.includes("i don't know") || allText.includes("wrong info")) { result.scores.accuracy = 0; }
+      if (inbounds.length > 3 && !allText.includes("resolved") && !allText.includes("fixed")) {
+        result.scores.resolution = 10; 
+        if (allText.includes("still not working")) result.scores.resolution = 0;
+      }
 
-  const lastMsg = outbounds[outbounds.length - 1]?.text.toLowerCase() || "";
-  if (!lastMsg.match(/bye|resolved|help|let me know|regards|thanks/)) {
-    result.scores.closing = 0; 
-  }
+      const outboundText = outbounds.map(m => m.text.toLowerCase()).join(' ');
+      if (outboundText.match(/sorry|apologize|understand|glad/)) {
+        result.scores.tone = 15;
+      } else if (outboundText.match(/no|can't|won't|you need to/)) {
+        result.scores.tone = 7; 
+        if (outboundText.length < 50 && outbounds.length > 2) result.scores.tone = 0; 
+      }
+      
+      if (outboundText.includes("what is your") && inbounds[0]?.text.includes(outboundText.split("what is your")[1]?.split(" ")[1])) {
+        result.scores.listening = 0; 
+      } else if (outbounds.length > 4) { result.scores.listening = 5; }
 
-  result.totalScore = Object.values(result.scores).reduce((a, b) => a + b, 0);
+      let maxGap = 0;
+      for (let i = 1; i < messages.length; i++) {
+        if (messages[i].direction === 'Outbound' && messages[i-1].direction === 'Inbound') {
+          const gap = (new Date(messages[i].timestamp) - new Date(messages[i-1].timestamp)) / 60000;
+          if (gap > maxGap) maxGap = gap;
+        }
+      }
+      if (maxGap > 5) result.scores.speed = 0;
+      else if (maxGap > 2) result.scores.speed = 5;
+      
+      if (outboundText.includes("ticket") || outboundText.includes("checked your account")) { result.scores.crm = 10; } 
+      else if (result.category === "Tech & Platform/LMS") { result.scores.crm = 0; }
 
-  if (result.scores.accuracy === 0) {
-    result.autoFail = true;
-    result.isFlagged = true;
-    result.flagReason = "Zero Accuracy (Auto-Fail)";
-  } else if (result.scores.tone === 0 || result.scores.speed === 0 || result.totalScore < 40) {
-    result.isFlagged = true;
-    let reasons = [];
-    if (result.scores.tone === 0) reasons.push("Unprofessional Tone");
-    if (result.scores.speed === 0) reasons.push("SLA Breach");
-    if (result.totalScore < 40) reasons.push("Extremely Low Total Score");
-    result.flagReason = reasons.join(" | ");
-  }
+      if (outbounds.some(m => m.text.length > 300 && !m.text.includes("\n"))) { result.scores.formatting = 0; } 
+      else if (outbounds.some(m => m.text.length > 150)) { result.scores.formatting = 2; }
+      
+      if (outboundText.match(/\b(u|pls|thx|ur)\b/)) { result.scores.grammar = 0; } 
+      else if (outboundText.match(/[a-z][.?!][a-z]/)) { result.scores.grammar = 2; }
 
-  const weaknesses = [];
-  if (result.scores.tone < 15) weaknesses.push("improve warmth and empathy");
-  if (result.scores.resolution < 20) weaknesses.push("anticipate follow-up needs using 'The +1 Method'");
-  if (result.scores.grammar < 5) weaknesses.push("avoid shorthand/text-speak (e.g., pls, u)");
-  if (result.scores.speed < 10) weaknesses.push("reduce response delays to meet SLA");
-  if (result.scores.formatting < 5) weaknesses.push("break up long messages with line breaks");
-  if (result.scores.closing === 0) weaknesses.push("ensure a proper sign-off confirming resolution");
+      const lastMsg = outbounds[outbounds.length - 1]?.text.toLowerCase() || "";
+      if (!lastMsg.match(/bye|resolved|help|let me know|regards|thanks/)) { result.scores.closing = 0; }
 
-  if (result.totalScore === 100) {
-    result.feedback = "Excellent interaction! Perfect accuracy, empathy, and process execution.";
-  } else if (weaknesses.length > 0) {
-    result.feedback = `To improve, ${weaknesses[0]}${weaknesses.length > 1 ? ` and ${weaknesses[1]}` : ''}. ${result.scores.accuracy === 0 ? 'CRITICAL: Ensure factual accuracy before responding.' : ''}`;
-  } else {
-    result.feedback = "Good interaction overall, review minor process gaps.";
-  }
+      result.totalScore = Object.values(result.scores).reduce((a, b) => a + b, 0);
 
-  return result;
-};
+      if (result.scores.accuracy === 0) {
+        result.autoFail = true; result.isFlagged = true; result.flagReason = "Zero Accuracy (Auto-Fail)";
+      } else if (result.scores.tone === 0 || result.scores.speed === 0 || result.totalScore < 40) {
+        result.isFlagged = true;
+        let reasons = [];
+        if (result.scores.tone === 0) reasons.push("Unprofessional Tone");
+        if (result.scores.speed === 0) reasons.push("SLA Breach");
+        if (result.totalScore < 40) reasons.push("Extremely Low Total Score");
+        result.flagReason = reasons.join(" | ");
+      }
 
-const CAT_CLASS = {
-  'Refund': 'cat-refund',
-  'Tech & Platform/LMS': 'cat-tech',
-  'Registrations & Exams': 'cat-reg',
-  'Operations & Logistics': 'cat-ops',
-  'New Leads & Referrals': 'cat-leads',
-  'Academics & Careers': 'cat-academic',
-  'Service': 'cat-service'
-};
+      const weaknesses = [];
+      if (result.scores.tone < 15) weaknesses.push("improve warmth and empathy");
+      if (result.scores.resolution < 20) weaknesses.push("anticipate follow-up needs using 'The +1 Method'");
+      if (result.scores.grammar < 5) weaknesses.push("avoid shorthand/text-speak (e.g., pls, u)");
+      if (result.scores.speed < 10) weaknesses.push("reduce response delays to meet SLA");
+      if (result.scores.formatting < 5) weaknesses.push("break up long messages with line breaks");
+      if (result.scores.closing === 0) weaknesses.push("ensure a proper sign-off confirming resolution");
 
-// --- SAMPLE DATA GENERATOR ---
-const generateSampleData = () => {
-  return `Prospect Id,Student ID,Lead Name,Notes,Direction,Activity Date,Owner (User Name),BD Owner,Lead Stage
+      if (result.totalScore === 100) { result.feedback = "Excellent interaction! Perfect accuracy, empathy, and process execution."; } 
+      else if (weaknesses.length > 0) { result.feedback = `To improve, ${weaknesses[0]}${weaknesses.length > 1 ? ` and ${weaknesses[1]}` : ''}. ${result.scores.accuracy === 0 ? 'CRITICAL: Ensure factual accuracy before responding.' : ''}`; } 
+      else { result.feedback = "Good interaction overall, review minor process gaps."; }
+
+      return result;
+    };
+
+    const CAT_CLASS = {
+      'Refund': 'cat-refund', 'Tech & Platform/LMS': 'cat-tech', 'Registrations & Exams': 'cat-reg',
+      'Operations & Logistics': 'cat-ops', 'New Leads & Referrals': 'cat-leads',
+      'Academics & Careers': 'cat-academic', 'Service': 'cat-service'
+    };
+
+    const generateSampleData = () => {
+      return `Prospect Id,Student ID,Lead Name,Notes,Direction,Activity Date,Owner (User Name),BD Owner,Lead Stage
 P001,S1001,Riya Sharma,Hi I cannot login to my LMS account at all it keeps saying invalid credentials,Inbound,2024-01-15 09:00:00,John Smith,,Enrolled
 P001,S1001,Riya Sharma,"Hello Riya! I can see your account here. It got locked after multiple failed attempts. Let me unlock it right away.",Outbound,2024-01-15 09:02:00,John Smith,,Enrolled
 P001,S1001,Riya Sharma,"Done! Your account is now active. Please clear your browser cache and try logging in again. Just so you know - if you use the mobile app you may need to reinstall it after an unlock. Let me know if anything else comes up!",Outbound,2024-01-15 09:04:00,John Smith,,Enrolled
@@ -202,621 +309,483 @@ P006,S1006,Dev Patel,EN7890,Inbound,2024-01-15 14:36:00,Robert Chen,,Enrolled
 P006,S1006,Dev Patel,ok i checked its fixed now. clear cache and it shud work,Outbound,2024-01-15 14:55:00,Robert Chen,,Enrolled
 P007,S1007,Fatima Sheikh,I need help to book my ACCA exam for the March session and pay the fee through your portal,Inbound,2024-01-15 15:00:00,Priyal Bhargava,,Enrolled
 P007,S1007,Fatima Sheikh,"Hi Fatima! Happy to guide you through the ACCA exam booking process. To begin you will need to log in to the ACCA Connect portal using your registration number.",Outbound,2024-01-15 15:02:00,Priyal Bhargava,,Enrolled`;
-};
+    };
 
-// --- MAIN APPLICATION COMPONENT ---
-export default function App() {
-  const [threads, setThreads] = useState([]);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [fileName, setFileName] = useState("");
-  const [expandedId, setExpandedId] = useState(null);
-  
-  // Filters & Sorting
-  const [sortConfig, setSortConfig] = useState({ key: '', dir: 1 });
-  const [filters, setFilters] = useState({ agent: '', cat: '', stage: '', score: '', flag: '', search: '' });
-  
-  const fileInputRef = useRef(null);
-  const [dragOver, setDragOver] = useState(false);
+    // --- MAIN APP COMPONENT ---
+    function App() {
+      const [threads, setThreads] = useState([]);
+      const [isProcessing, setIsProcessing] = useState(false);
+      const [fileName, setFileName] = useState("");
+      const [expandedId, setExpandedId] = useState(null);
+      
+      const [geminiInsights, setGeminiInsights] = useState({});
+      const [isGeneratingInsight, setIsGeneratingInsight] = useState({});
+      const [geminiError, setGeminiError] = useState({});
 
-  const getCol = (row, ...names) => {
-    const keys = Object.keys(row);
-    for (let name of names) {
-      let f = keys.find(k => k.trim() === name);
-      if (f !== undefined && row[f] !== undefined && row[f] !== '') return row[f];
-    }
-    for (let name of names) {
-      let nl = name.toLowerCase().replace(/[\s_()/]/g, '');
-      let f = keys.find(k => k.trim().toLowerCase().replace(/[\s_()/]/g, '') === nl);
-      if (f !== undefined && row[f] !== undefined && row[f] !== '') return row[f];
-    }
-    return '';
-  };
+      const [sortConfig, setSortConfig] = useState({ key: '', dir: 1 });
+      const [filters, setFilters] = useState({ agent: '', cat: '', stage: '', score: '', flag: '', search: '' });
+      
+      const fileInputRef = useRef(null);
+      const [dragOver, setDragOver] = useState(false);
 
-  const processCSV = (csvText, name) => {
-    setIsProcessing(true);
-    setFileName(name);
-    
-    setTimeout(() => {
-      try {
-        const rows = parseCSV(csvText);
-        if (rows.length < 2) throw new Error("File appears empty or invalid.");
+      const getCol = (row, ...names) => {
+        const keys = Object.keys(row);
+        for (let name of names) {
+          let f = keys.find(k => k.trim() === name);
+          if (f !== undefined && row[f] !== undefined && row[f] !== '') return row[f];
+        }
+        for (let name of names) {
+          let nl = name.toLowerCase().replace(/[\s_()/]/g, '');
+          let f = keys.find(k => k.trim().toLowerCase().replace(/[\s_()/]/g, '') === nl);
+          if (f !== undefined && row[f] !== undefined && row[f] !== '') return row[f];
+        }
+        return '';
+      };
+
+      const processCSV = (csvText, name) => {
+        setIsProcessing(true);
+        setFileName(name);
         
-        const headers = rows[0];
-        const rowObjects = [];
-        for (let i = 1; i < rows.length; i++) {
-          if (rows[i].length < headers.length) continue;
-          let obj = {};
-          headers.forEach((h, idx) => obj[h] = rows[i][idx]);
-          rowObjects.push(obj);
-        }
+        setTimeout(() => {
+          try {
+            const rows = parseCSV(csvText);
+            if (rows.length < 2) throw new Error("File appears empty or invalid.");
+            
+            const headers = rows[0];
+            const rowObjects = [];
+            for (let i = 1; i < rows.length; i++) {
+              if (rows[i].length < headers.length) continue;
+              let obj = {};
+              headers.forEach((h, idx) => obj[h] = rows[i][idx]);
+              rowObjects.push(obj);
+            }
 
-        const threadMap = {};
-        for (let row of rowObjects) {
-          let pid = getCol(row, 'Prospect Id', 'ProspectId', 'Prospect ID', 'prospect_id') || 'UNKNOWN';
-          let owner = getCol(row, 'Owner (User Name)', 'Owner (username)', 'Owner', 'owner') || getCol(row, 'BD Owner', 'BDOwner', 'bd_owner') || 'Unknown';
-          
-          if (!threadMap[pid]) {
-            threadMap[pid] = {
-              prospectId: pid,
-              studentId: getCol(row, 'Student ID', 'StudentID', 'student_id'),
-              leadName: getCol(row, 'Lead Name', 'LeadName', 'lead_name', 'Name'),
-              leadStage: getCol(row, 'Lead Stage', 'LeadStage', 'lead_stage', 'Stage'),
-              owner: owner,
-              messages: []
-            };
-          }
-          
-          // Only add messages that exist
-          const notes = getCol(row, 'Notes', 'notes', 'Note', 'Message', 'message');
-          const direction = getCol(row, 'Direction', 'direction');
-          const date = getCol(row, 'Activity Date', 'ActivityDate', 'activity_date', 'Date', 'Timestamp');
-          
-          if (notes) {
-            threadMap[pid].messages.push({
-              text: notes,
-              direction: direction || 'Unknown',
-              timestamp: date || new Date().toISOString()
+            const threadMap = {};
+            for (let row of rowObjects) {
+              let pid = getCol(row, 'Prospect Id', 'ProspectId', 'Prospect ID', 'prospect_id') || 'UNKNOWN';
+              let owner = getCol(row, 'Owner (User Name)', 'Owner (username)', 'Owner', 'owner') || getCol(row, 'BD Owner', 'BDOwner', 'bd_owner') || 'Unknown';
+              
+              if (!threadMap[pid]) {
+                threadMap[pid] = {
+                  prospectId: pid, studentId: getCol(row, 'Student ID', 'StudentID', 'student_id'),
+                  leadName: getCol(row, 'Lead Name', 'LeadName', 'lead_name', 'Name'),
+                  leadStage: getCol(row, 'Lead Stage', 'LeadStage', 'lead_stage', 'Stage'),
+                  owner: owner, messages: []
+                };
+              }
+              
+              const notes = getCol(row, 'Notes', 'notes', 'Note', 'Message', 'message');
+              const direction = getCol(row, 'Direction', 'direction');
+              const date = getCol(row, 'Activity Date', 'ActivityDate', 'activity_date', 'Date', 'Timestamp');
+              
+              if (notes) {
+                threadMap[pid].messages.push({
+                  text: notes, direction: direction || 'Unknown', timestamp: date || new Date().toISOString()
+                });
+              }
+            }
+
+            const processedThreads = Object.values(threadMap).map(t => {
+              t.messages.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+              t.eval = evaluateThread(t);
+              return t;
             });
+
+            setThreads(processedThreads);
+            setExpandedId(null);
+          } catch (err) { alert("Error processing file: " + err.message); }
+          setIsProcessing(false);
+        }, 500); 
+      };
+
+      const handleFileChange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (evt) => processCSV(evt.target.result, file.name);
+        reader.readAsText(file);
+      };
+
+      const loadDemoData = () => processCSV(generateSampleData(), "sample_data.csv");
+      const toggleRow = (id) => setExpandedId(expandedId === id ? null : id);
+      const handleSort = (key) => setSortConfig({ key, dir: sortConfig.key === key ? sortConfig.dir * -1 : 1 });
+
+      const generateGeminiInsights = async (thread) => {
+        const pid = thread.prospectId;
+        setIsGeneratingInsight(prev => ({ ...prev, [pid]: true }));
+        setGeminiError(prev => ({ ...prev, [pid]: null }));
+
+        const formattedConversation = thread.messages.map(m => 
+          `[${m.direction === 'Outbound' ? 'Agent (' + thread.owner + ')' : 'Customer (' + (thread.leadName || 'Unknown') + ')'}] (${m.timestamp}): ${m.text}`
+        ).join('\n');
+
+        const promptText = `
+You are an expert Customer Experience (CX) Manager and QA Coach. Analyze the following customer support thread.
+
+Conversation:
+${formattedConversation}
+
+Based on this interaction, provide:
+1. A concise 2-sentence summary of the issue and resolution status.
+2. Three specific, actionable coaching points for the agent (${thread.owner}) on how they handled the query (focus on empathy, resolution, tone, or process).
+3. A short, constructive draft email from the manager to the agent providing feedback on this specific ticket. Keep it encouraging but clear on areas of improvement (if any) or praise.
+`;
+
+        const payload = {
+          contents: [{ parts: [{ text: promptText }] }],
+          generationConfig: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: "OBJECT",
+              properties: { summary: { type: "STRING" }, coachingPoints: { type: "ARRAY", items: { type: "STRING" } }, draftEmail: { type: "STRING" } },
+              required: ["summary", "coachingPoints", "draftEmail"]
+            }
+          }
+        };
+
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+        const delays = [1000, 2000, 4000, 8000, 16000];
+
+        for (let i = 0; i < delays.length; i++) {
+          try {
+            if (!apiKey) throw new Error("Please add your Gemini API key to the code to use this feature.");
+            const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            if (!response.ok) {
+              const errText = await response.text();
+              throw new Error(`API Error: ${response.status} - ${errText}`);
+            }
+            const data = await response.json();
+            const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (content) {
+              setGeminiInsights(prev => ({ ...prev, [pid]: JSON.parse(content) }));
+              break; 
+            } else throw new Error("Invalid response format from Gemini API");
+          } catch (error) {
+            if (i === delays.length - 1 || !apiKey) {
+              setGeminiError(prev => ({ ...prev, [pid]: error.message || "Failed to generate insights after multiple attempts." }));
+              break;
+            } else await new Promise(res => setTimeout(res, delays[i])); 
           }
         }
+        setIsGeneratingInsight(prev => ({ ...prev, [pid]: false }));
+      };
 
-        const processedThreads = Object.values(threadMap).map(t => {
-          t.messages.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-          t.eval = evaluateThread(t);
-          return t;
+      const getSortedFilteredThreads = () => {
+        let result = threads.filter(t => {
+          const e = t.eval;
+          if (filters.agent && t.owner !== filters.agent) return false;
+          if (filters.cat && e.category !== filters.cat) return false;
+          if (filters.stage && t.leadStage !== filters.stage) return false;
+          if (filters.flag === 'yes' && !e.isFlagged && !e.autoFail) return false;
+          if (filters.score) {
+            const s = e.totalScore, na = !e.isScored;
+            if (filters.score === 'high' && (na || s < 80)) return false;
+            if (filters.score === 'mid' && (na || s < 40 || s >= 80)) return false;
+            if (filters.score === 'low' && (na || s >= 40)) return false;
+            if (filters.score === 'na' && !na) return false;
+          }
+          if (filters.search) {
+            const srch = filters.search.toLowerCase();
+            const hay = `${t.prospectId} ${t.studentId} ${t.leadName} ${t.owner} ${t.messages.map(m=>m.text).join(' ')}`.toLowerCase();
+            if (!hay.includes(srch)) return false;
+          }
+          return true;
         });
 
-        setThreads(processedThreads);
-        setExpandedId(null);
-      } catch (err) {
-        alert("Error processing file: " + err.message);
-      }
-      setIsProcessing(false);
-    }, 500); 
-  };
-
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (evt) => processCSV(evt.target.result, file.name);
-    reader.readAsText(file);
-  };
-
-  const loadDemoData = () => processCSV(generateSampleData(), "sample_data.csv");
-
-  const toggleRow = (id) => {
-    setExpandedId(expandedId === id ? null : id);
-  };
-
-  const handleSort = (key) => {
-    setSortConfig({ key, dir: sortConfig.key === key ? sortConfig.dir * -1 : 1 });
-  };
-
-  const getSortedFilteredThreads = () => {
-    let result = threads.filter(t => {
-      const e = t.eval;
-      if (filters.agent && t.owner !== filters.agent) return false;
-      if (filters.cat && e.category !== filters.cat) return false;
-      if (filters.stage && t.leadStage !== filters.stage) return false;
-      if (filters.flag === 'yes' && !e.isFlagged && !e.autoFail) return false;
-      
-      if (filters.score) {
-        const s = e.totalScore;
-        const na = !e.isScored;
-        if (filters.score === 'high' && (na || s < 80)) return false;
-        if (filters.score === 'mid' && (na || s < 40 || s >= 80)) return false;
-        if (filters.score === 'low' && (na || s >= 40)) return false;
-        if (filters.score === 'na' && !na) return false;
-      }
-      
-      if (filters.search) {
-        const srch = filters.search.toLowerCase();
-        const hay = `${t.prospectId} ${t.studentId} ${t.leadName} ${t.owner} ${t.messages.map(m=>m.text).join(' ')}`.toLowerCase();
-        if (!hay.includes(srch)) return false;
-      }
-      return true;
-    });
-
-    if (sortConfig.key) {
-      result.sort((a, b) => {
-        let av = a[sortConfig.key];
-        let bv = b[sortConfig.key];
-        
-        if (sortConfig.key === 'totalScore') {
-          av = a.eval.isScored ? a.eval.totalScore : -1;
-          bv = b.eval.isScored ? b.eval.totalScore : -1;
-        } else if (sortConfig.key === 'category') {
-          av = a.eval.category;
-          bv = b.eval.category;
+        if (sortConfig.key) {
+          result.sort((a, b) => {
+            let av = a[sortConfig.key], bv = b[sortConfig.key];
+            if (sortConfig.key === 'totalScore') { av = a.eval.isScored ? a.eval.totalScore : -1; bv = b.eval.isScored ? b.eval.totalScore : -1; } 
+            else if (sortConfig.key === 'category') { av = a.eval.category; bv = b.eval.category; }
+            if (typeof av === 'string') av = av.toLowerCase();
+            if (typeof bv === 'string') bv = bv.toLowerCase();
+            return av > bv ? sortConfig.dir : av < bv ? -sortConfig.dir : 0;
+          });
         }
+        return result;
+      };
 
-        if (typeof av === 'string') av = av.toLowerCase();
-        if (typeof bv === 'string') bv = bv.toLowerCase();
-        return av > bv ? sortConfig.dir : av < bv ? -sortConfig.dir : 0;
-      });
-    }
-    return result;
-  };
+      const exportCSVData = () => {
+        if (threads.length === 0) return;
+        const hdr = ['Prospect Id', 'Student ID', 'Lead Name', 'Lead Stage', 'Agent (Owner)', 'Category', 'Subcategory', 'Total Score', 'Accuracy', 'Resolution', 'Tone', 'Listening', 'Speed', 'CRM', 'Formatting', 'Grammar', 'Closing', 'Flagged', 'Auto-Fail', 'Flag Reason', 'AI Feedback'];
+        const rows = getSortedFilteredThreads().map(t => {
+          const e = t.eval, b = e.scores || {};
+          return [
+            t.prospectId, t.studentId || '', t.leadName || '', t.leadStage || '', t.owner, e.category, e.subcategory || '',
+            e.isScored ? e.totalScore : 'N/A', e.isScored ? b.accuracy : '', e.isScored ? b.resolution : '', e.isScored ? b.tone : '', e.isScored ? b.listening : '',
+            e.isScored ? b.speed : '', e.isScored ? b.crm : '', e.isScored ? b.formatting : '', e.isScored ? b.grammar : '', e.isScored ? b.closing : '',
+            e.isFlagged ? 'Yes' : 'No', e.autoFail ? 'Yes' : 'No', e.flagReason || '', e.feedback || ''
+          ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
+        });
+        const csvContent = [hdr.join(','), ...rows].join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `QA_Export_${new Date().toISOString().split('T')[0]}.csv`;
+        link.click();
+      };
 
-  const exportCSVData = () => {
-    if (threads.length === 0) return;
-    const hdr = ['Prospect Id', 'Student ID', 'Lead Name', 'Lead Stage', 'Agent (Owner)', 'Category', 'Subcategory', 'Total Score', 'Accuracy', 'Resolution', 'Tone', 'Listening', 'Speed', 'CRM', 'Formatting', 'Grammar', 'Closing', 'Flagged', 'Auto-Fail', 'Flag Reason', 'AI Feedback'];
-    
-    const rows = getSortedFilteredThreads().map(t => {
-      const e = t.eval;
-      const b = e.scores || {};
-      return [
-        t.prospectId, t.studentId || '', t.leadName || '', t.leadStage || '', t.owner, e.category, e.subcategory || '',
-        e.isScored ? e.totalScore : 'N/A',
-        e.isScored ? b.accuracy : '', e.isScored ? b.resolution : '', e.isScored ? b.tone : '', e.isScored ? b.listening : '',
-        e.isScored ? b.speed : '', e.isScored ? b.crm : '', e.isScored ? b.formatting : '', e.isScored ? b.grammar : '', e.isScored ? b.closing : '',
-        e.isFlagged ? 'Yes' : 'No', e.autoFail ? 'Yes' : 'No', e.flagReason || '', e.feedback || ''
-      ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
-    });
+      const stats = useMemo(() => {
+        const scored = threads.filter(t => t.eval.isScored);
+        return {
+          total: threads.length,
+          avg: scored.length ? Math.round(scored.reduce((acc, t) => acc + t.eval.totalScore, 0) / scored.length) : '-',
+          na: threads.filter(t => !t.eval.isScored).length,
+          flagged: threads.filter(t => t.eval.isFlagged).length,
+          autoFail: threads.filter(t => t.eval.autoFail).length
+        };
+      }, [threads]);
 
-    const csvContent = [hdr.join(','), ...rows].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `QA_Export_${new Date().toISOString().split('T')[0]}.csv`;
-    link.click();
-  };
+      const uniqueAgents = [...new Set(threads.map(t => t.owner).filter(Boolean))].sort();
+      const uniqueStages = [...new Set(threads.map(t => t.leadStage).filter(Boolean))].sort();
+      const uniqueCats = [...new Set(threads.map(t => t.eval.category).filter(Boolean))].sort();
+      const displayedThreads = getSortedFilteredThreads();
 
-  const stats = useMemo(() => {
-    const scored = threads.filter(t => t.eval.isScored);
-    const avgScore = scored.length ? Math.round(scored.reduce((acc, t) => acc + t.eval.totalScore, 0) / scored.length) : '-';
-    return {
-      total: threads.length,
-      avg: avgScore,
-      na: threads.filter(t => !t.eval.isScored).length,
-      flagged: threads.filter(t => t.eval.isFlagged).length,
-      autoFail: threads.filter(t => t.eval.autoFail).length
-    };
-  }, [threads]);
-
-  const uniqueAgents = [...new Set(threads.map(t => t.owner).filter(Boolean))].sort();
-  const uniqueStages = [...new Set(threads.map(t => t.leadStage).filter(Boolean))].sort();
-  const uniqueCats = [...new Set(threads.map(t => t.eval.category).filter(Boolean))].sort();
-  const displayedThreads = getSortedFilteredThreads();
-
-  return (
-    <>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Sora:wght@300;400;500;600;700&display=swap');
-        :root{--bg:#0b0f1a;--surface:#111827;--card:#161e2e;--border:#1f2d45;--accent:#00d4a8;--accent2:#3b82f6;--warn:#fbbf24;--danger:#f87171;--success:#34d399;--text:#f8fafc;--muted:#94a3b8;--mono:'Space Mono',monospace;--sans:'Sora',sans-serif;}
-        *{box-sizing:border-box;margin:0;padding:0;}
-        body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;overflow-x:hidden;}
-        body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,212,168,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,212,168,.03) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;z-index:0;}
-        .wrap{position:relative;z-index:1;max-width:1500px;margin:0 auto;padding:0 24px;}
-        header{border-bottom:1px solid var(--border);padding:18px 0;background:rgba(11,15,26,.93);backdrop-filter:blur(14px);position:sticky;top:0;z-index:100;}
-        .header-inner{display:flex;align-items:center;justify-content:space-between;}
-        .logo{display:flex;align-items:center;gap:12px;}
-        .logo-icon{width:38px;height:38px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;}
-        .logo-text{font-size:17px;font-weight:600;letter-spacing:-.3px;}
-        .logo-sub{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:1px;}
-        .status-pill{font-family:var(--mono);font-size:11px;padding:5px 12px;border-radius:20px;border:1px solid var(--border);color:var(--muted);letter-spacing:.5px;}
-        .upload-section{padding:60px 0 40px;}
-        .upload-hero{text-align:center;margin-bottom:40px;}
-        .upload-hero h1{font-size:42px;font-weight:700;letter-spacing:-1px;background:linear-gradient(135deg,#fff 30%,var(--accent));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:12px;}
-        .upload-hero p{color:var(--muted);font-size:15px;max-width:540px;margin:0 auto;line-height:1.6;}
-        .dropzone{border:2px dashed var(--border);border-radius:20px;padding:56px 40px;text-align:center;cursor:pointer;transition:all .3s;background:var(--card);position:relative;overflow:hidden;}
-        .dropzone::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(0,212,168,.04) 0%,transparent 70%);pointer-events:none;}
-        .dropzone:hover,.dropzone.drag-over{border-color:var(--accent);background:rgba(0,212,168,.04);}
-        .dropzone-icon{font-size:48px;margin-bottom:14px;}
-        .dropzone h3{font-size:18px;font-weight:600;margin-bottom:8px;}
-        .dropzone p{color:var(--muted);font-size:13px;line-height:1.6;}
-        .col-chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:14px;}
-        .col-chip{font-family:var(--mono);font-size:11px;padding:4px 10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--accent);}
-        .upload-btn{display:inline-block;margin-top:20px;padding:10px 28px;background:var(--accent);color:#000;border-radius:8px;font-weight:600;font-size:14px;cursor:pointer;transition:opacity .2s;}
-        .upload-btn:hover{opacity:.85;}
-        .stats-bar{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;padding:32px 0 20px;}
-        .stat-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;position:relative;overflow:hidden;}
-        .stat-card::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;background:var(--accent);}
-        .stat-card.blue::after{background:var(--accent2);}
-        .stat-card.warn::after{background:var(--warn);}
-        .stat-card.danger::after{background:var(--danger);}
-        .stat-card.purple::after{background:#8b5cf6;}
-        .stat-label{font-size:11px;color:var(--muted);text-transform:uppercase;font-family:var(--mono);letter-spacing:.5px;margin-bottom:8px;}
-        .stat-value{font-size:32px;font-weight:700;letter-spacing:-1px;color:var(--muted);}
-        .stat-sub{font-size:11px;color:var(--muted);margin-top:4px;}
-        .filters{display:flex;flex-wrap:wrap;gap:10px;padding:0 0 20px;align-items:center;}
-        .filter-label{font-size:12px;color:var(--muted);font-family:var(--mono);}
-        select,input[type="text"]{background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 14px;font-size:13px;font-family:var(--sans);outline:none;transition:border-color .2s;}
-        select option { background: var(--card); color: var(--text); }
-        select:focus,input[type="text"]:focus{border-color:var(--accent);}
-        .btn{padding:8px 18px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-family:var(--sans);font-weight:500;transition:all .2s;}
-        .btn-primary{background:var(--accent);color:#000;}
-        .btn-primary:hover{opacity:.85;}
-        .btn-ghost{background:var(--card);border:1px solid var(--border);color:var(--text);}
-        .btn-ghost:hover{border-color:var(--accent);color:var(--accent);}
-        .table-section{padding-bottom:60px;}
-        .table-wrap{border:1px solid var(--border);border-radius:16px;overflow:hidden;background:var(--surface);}
-        table{width:100%;border-collapse:collapse;}
-        thead{background:var(--surface);border-bottom:1px solid var(--border);}
-        th{padding:13px 14px;font-size:11px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.8px;color:var(--muted);text-align:left;white-space:nowrap;cursor:pointer;user-select:none;}
-        th:hover{color:var(--accent);}
-        tbody tr{border-bottom:1px solid var(--border);transition:background .15s;cursor:pointer;}
-        tbody tr:last-child{border-bottom:none;}
-        tbody tr:hover{background:rgba(0,212,168,.03);}
-        tbody tr.expanded-open{background:rgba(0,212,168,.05);}
-        td{padding:13px 14px;font-size:13px;vertical-align:middle;}
-        .prospect-id{font-family:var(--mono);font-size:11px;color:var(--accent);font-weight:700;}
-        .student-id-cell{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:2px;}
-        .lead-name{font-weight:600;font-size:13px;color:var(--muted);}
-        .lead-stage-cell{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:2px;}
-        .agent-cell{font-weight:500;font-size:12px;color:var(--muted);}
-        .cat-badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap;}
-        .subcat-text{font-size:11px;color:var(--muted);margin-top:3px;}
-        .cat-refund{background:rgba(239,68,68,.15);color:#fca5a5;}
-        .cat-tech{background:rgba(59,130,246,.15);color:#93c5fd;}
-        .cat-reg{background:rgba(139,92,246,.15);color:#c4b5fd;}
-        .cat-ops{background:rgba(245,158,11,.15);color:#fcd34d;}
-        .cat-leads{background:rgba(16,185,129,.15);color:#6ee7b7;}
-        .cat-academic{background:rgba(236,72,153,.15);color:#f9a8d4;}
-        .cat-service{background:rgba(0,212,168,.15);color:#5eead4;}
-        .score-display{font-family:var(--mono);font-weight:700;font-size:18px;}
-        .score-na{font-family:var(--mono);font-size:11px;color:var(--muted);padding:4px 10px;border:1px solid var(--border);border-radius:6px;}
-        .score-good{color:var(--success);}
-        .score-mid{color:var(--warn);}
-        .score-bad{color:var(--danger);}
-        .flag-badge{display:inline-block;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:600;font-family:var(--mono);}
-        .flag-badge.flagged{background:rgba(239,68,68,.15);color:var(--danger);}
-        .flag-badge.autofail{background:rgba(239,68,68,.2);color:#fca5a5;}
-        .msg-count{font-family:var(--mono);font-size:11px;color:var(--muted);}
-        .expanded-row{background:var(--bg);}
-        .expanded-content{padding:24px;display:grid;grid-template-columns:1fr 1fr;gap:20px; cursor: default;}
-        .exp-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;}
-        .exp-card h4{font-size:11px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:14px;}
-        .meta-bar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;}
-        .meta-chip{font-family:var(--mono);font-size:10px;padding:4px 10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;}
-        .meta-chip .lbl{color:var(--muted);}
-        .chat-thread{max-height:340px;overflow-y:auto;display:flex;flex-direction:column;gap:8px; padding-right:8px;}
-        .chat-bubble{max-width:82%;padding:10px 14px;border-radius:12px;font-size:12px;line-height:1.6;color:var(--muted);}
-        .bubble-in{background:var(--surface);border:1px solid var(--border);align-self:flex-start;border-bottom-left-radius:4px;}
-        .bubble-out{background:rgba(0,212,168,.1);border:1px solid rgba(0,212,168,.2);align-self:flex-end;border-bottom-right-radius:4px;}
-        .bubble-meta{font-size:10px;color:var(--muted);font-family:var(--mono);margin-bottom:3px;}
-        .bubble-out .bubble-meta{text-align:right;}
-        .score-total-row{display:flex;align-items:center;gap:16px;margin-bottom:14px;padding:12px;background:var(--surface);border-radius:10px;}
-        .score-big{font-size:40px;font-weight:700;font-family:var(--mono);}
-        .sbar-track{flex:1;background:var(--bg);border-radius:4px;height:6px;overflow:hidden;}
-        .sbar-fill{height:6px;border-radius:4px;transition:width .6s;}
-        .score-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
-        .score-item{background:var(--surface);border-radius:8px;padding:12px;}
-        .si-label{font-size:10px;color:var(--muted);font-family:var(--mono);margin-bottom:5px;}
-        .si-val{font-size:20px;font-weight:700;font-family:var(--mono);}
-        .si-max{font-size:10px;color:var(--muted);}
-        .si-track{background:var(--bg);border-radius:3px;height:3px;margin-top:6px;overflow:hidden;}
-        .si-fill{height:3px;border-radius:3px;}
-        .insufficient-badge{font-size:11px;color:var(--warn);font-family:var(--mono);padding:12px 16px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);border-radius:8px;line-height:1.7;}
-        .feedback-text{font-size:13px;line-height:1.75;color:var(--text);padding:12px 16px;background:var(--surface);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;}
-        .flag-detail{padding:12px 16px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);border-radius:8px;font-size:12px;color:#fca5a5;line-height:1.7;margin-top:14px;}
-        .right-col{display:flex;flex-direction:column;gap:14px;}
-        .table-footer{text-align:center;padding:14px 0;color:var(--muted);font-family:var(--mono);font-size:11px;}
-        .empty-state{text-align:center;padding:60px 20px;color:var(--muted);font-family:var(--mono);font-size:12px;}
-        ::-webkit-scrollbar{width:5px;height:5px;}
-        ::-webkit-scrollbar-track{background:transparent;}
-        ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
-      `}</style>
-
-      <header>
-        <div className="wrap header-inner">
-          <div className="logo">
-            <div className="logo-icon">📊</div>
-            <div>
-              <div className="logo-text">Zell - Customer Service QA</div>
-              <div className="logo-sub">WHATSAPP SUPPORT ANALYSER</div>
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--muted)' }}>
-              {fileName || (isProcessing ? 'Processing...' : '')}
-            </span>
-            <div className="status-pill">
-              {isProcessing ? 'PROCESSING' : threads.length > 0 ? 'COMPLETE' : 'READY'}
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <div className="wrap">
-        
-        {threads.length === 0 && (
-          <div className="upload-section">
-            <div 
-              className={`dropzone ${dragOver ? 'drag-over' : ''}`}
-              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={(e) => { 
-                e.preventDefault(); 
-                setDragOver(false); 
-                if (e.dataTransfer.files[0]) processCSV(e.dataTransfer.files[0]); 
-              }}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <div className="dropzone-icon">📂</div>
-              <h3>Drop your CSV file here</h3>
-              <p>Required columns (exact names used by the system):</p>
-              <div className="col-chips">
-                <span className="col-chip">Prospect Id</span>
-                <span className="col-chip">Student ID</span>
-                <span className="col-chip">Lead Name</span>
-                <span className="col-chip">Notes</span>
-                <span className="col-chip">Direction</span>
-                <span className="col-chip">Activity Date</span>
-                <span className="col-chip">Owner (User Name)</span>
-                <span className="col-chip">Lead Stage</span>
+      return (
+        <React.Fragment>
+          <header>
+            <div className="wrap header-inner">
+              <div className="logo">
+                <div className="logo-icon">📊</div>
+                <div>
+                  <div className="logo-text">Zell - Customer Service QA</div>
+                  <div className="logo-sub">WHATSAPP SUPPORT ANALYSER</div>
+                </div>
               </div>
-              <div className="upload-btn">Choose CSV File</div>
-              <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".csv" style={{ display: 'none' }} />
-            </div>
-
-            <div style={{ textAlign: 'center', marginTop: '16px' }}>
-              <button className="btn btn-ghost" onClick={loadDemoData}>▶ Load Sample Data</button>
-              <span style={{ color: 'var(--muted)', fontSize: '12px', marginLeft: '12px' }}>7 demo conversations across all categories</span>
-            </div>
-          </div>
-        )}
-
-        {threads.length > 0 && !isProcessing && (
-          <>
-            <div className="stats-bar">
-              <div className="stat-card">
-                <div className="stat-label">Total Threads</div>
-                <div className="stat-value">{stats.total}</div>
-                <div className="stat-sub">unique prospects</div>
-              </div>
-              <div className="stat-card blue">
-                <div className="stat-label">Avg QA Score</div>
-                <div className="stat-value">{stats.avg}</div>
-                <div className="stat-sub">out of 100</div>
-              </div>
-              <div className="stat-card warn">
-                <div className="stat-label">Not Scored</div>
-                <div className="stat-value">{stats.na}</div>
-                <div className="stat-sub">1 or fewer outbound</div>
-              </div>
-              <div className="stat-card danger">
-                <div className="stat-label">Flagged</div>
-                <div className="stat-value">{stats.flagged}</div>
-                <div className="stat-sub">severe breaches</div>
-              </div>
-              <div className="stat-card purple">
-                <div className="stat-label">Auto-Fail</div>
-                <div className="stat-value">{stats.autoFail}</div>
-                <div className="stat-sub">accuracy = 0</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: '10px', color: 'var(--muted)' }}>
+                  {fileName || (isProcessing ? 'Processing...' : '')}
+                </span>
+                <div className="status-pill">
+                  {isProcessing ? 'PROCESSING' : threads.length > 0 ? 'COMPLETE' : 'READY'}
+                </div>
               </div>
             </div>
+          </header>
 
-            <div className="filters">
-              <span className="filter-label">FILTER:</span>
-              <select value={filters.agent} onChange={e => setFilters({...filters, agent: e.target.value})}>
-                <option value="">All Agents</option>
-                {uniqueAgents.map(a => <option key={a} value={a}>{a}</option>)}
-              </select>
-              <select value={filters.cat} onChange={e => setFilters({...filters, cat: e.target.value})}>
-                <option value="">All Categories</option>
-                {uniqueCats.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-              <select value={filters.stage} onChange={e => setFilters({...filters, stage: e.target.value})}>
-                <option value="">All Lead Stages</option>
-                {uniqueStages.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-              <select value={filters.score} onChange={e => setFilters({...filters, score: e.target.value})}>
-                <option value="">All Scores</option>
-                <option value="high">High (80+)</option>
-                <option value="mid">Mid (40-79)</option>
-                <option value="low">Low (under 40)</option>
-                <option value="na">Not Scored</option>
-              </select>
-              <select value={filters.flag} onChange={e => setFilters({...filters, flag: e.target.value})}>
-                <option value="">All</option>
-                <option value="yes">Flagged / Auto-Fail</option>
-              </select>
-              <input 
-                type="text" 
-                placeholder="Search name / ID / notes..." 
-                style={{ width: '230px' }}
-                value={filters.search}
-                onChange={e => setFilters({...filters, search: e.target.value})}
-              />
-              <button className="btn btn-ghost" onClick={() => setFilters({agent:'', cat:'', stage:'', score:'', flag:'', search:''})}>Reset</button>
-              <div style={{ flex: 1 }}></div>
-              <button className="btn btn-ghost" onClick={exportCSVData}>Export CSV</button>
-            </div>
+          <div className="wrap">
+            {threads.length === 0 && (
+              <div className="upload-section">
+                <div 
+                  className={`dropzone ${dragOver ? 'drag-over' : ''}`}
+                  onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={(e) => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files[0]) processCSV(e.dataTransfer.files[0]); }}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <div className="dropzone-icon">📂</div>
+                  <h3>Drop your CSV file here</h3>
+                  <p>Required columns (exact names used by the system):</p>
+                  <div className="col-chips">
+                    <span className="col-chip">Prospect Id</span>
+                    <span className="col-chip">Student ID</span>
+                    <span className="col-chip">Lead Name</span>
+                    <span className="col-chip">Notes</span>
+                    <span className="col-chip">Direction</span>
+                    <span className="col-chip">Activity Date</span>
+                    <span className="col-chip">Owner (User Name)</span>
+                    <span className="col-chip">Lead Stage</span>
+                  </div>
+                  <div className="upload-btn">Choose CSV File</div>
+                  <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".csv" style={{ display: 'none' }} />
+                </div>
 
-            <div className="table-section">
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th onClick={() => handleSort('prospectId')}>Prospect Id {sortConfig.key === 'prospectId' && (sortConfig.dir===1?'↑':'↓')}</th>
-                      <th onClick={() => handleSort('leadName')}>Lead Name {sortConfig.key === 'leadName' && (sortConfig.dir===1?'↑':'↓')}</th>
-                      <th onClick={() => handleSort('owner')}>Agent {sortConfig.key === 'owner' && (sortConfig.dir===1?'↑':'↓')}</th>
-                      <th onClick={() => handleSort('category')}>Category {sortConfig.key === 'category' && (sortConfig.dir===1?'↑':'↓')}</th>
-                      <th>Sub-category</th>
-                      <th onClick={() => handleSort('totalScore')}>Score {sortConfig.key === 'totalScore' && (sortConfig.dir===1?'↑':'↓')}</th>
-                      <th title="Section totals A B C D">A . B . C . D</th>
-                      <th>Msgs</th>
-                      <th>Flag</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {displayedThreads.length === 0 ? (
-                      <tr><td colSpan="9"><div className="empty-state">NO RESULTS MATCH CURRENT FILTERS</div></td></tr>
-                    ) : (
-                      displayedThreads.map((t) => {
-                        const e = t.eval;
-                        const b = e.scores;
-                        const isExpanded = expandedId === t.prospectId;
-                        const inCount = t.messages.filter(m => m.direction.toLowerCase() === 'inbound').length;
-                        const outCount = t.messages.filter(m => m.direction.toLowerCase() === 'outbound').length;
-                        
-                        let scoreColor = "score-na", scoreText = "N/A", bkdn = <span style={{color:'var(--muted)', fontFamily:'var(--mono)', fontSize:'10px'}}>-</span>;
-                        
-                        if (e.isScored) {
-                          scoreColor = e.totalScore >= 80 ? 'score-good' : e.totalScore >= 40 ? 'score-mid' : 'score-bad';
-                          scoreText = e.totalScore;
-                          const sA = b.accuracy + b.resolution;
-                          const sB = b.tone + b.listening;
-                          const sC = b.speed + b.crm;
-                          const sD = b.formatting + b.grammar + b.closing;
-                          bkdn = <span style={{fontFamily:'var(--mono)', fontSize:'10px', color:'var(--muted)'}}>{sA} . {sB} . {sC} . {sD}</span>;
-                        }
+                <div style={{ textAlign: 'center', marginTop: '16px' }}>
+                  <button className="btn btn-ghost" onClick={loadDemoData}>▶ Load Sample Data</button>
+                  <span style={{ color: 'var(--muted)', fontSize: '12px', marginLeft: '12px' }}>7 demo conversations across all categories</span>
+                </div>
+              </div>
+            )}
 
-                        return (
-                          <React.Fragment key={t.prospectId}>
-                            <tr onClick={() => toggleRow(t.prospectId)} className={isExpanded ? 'expanded-open' : ''}>
-                              <td>
-                                <div className="prospect-id">{t.prospectId}</div>
-                                {t.studentId && <div className="student-id-cell">SID: {t.studentId}</div>}
-                              </td>
-                              <td>
-                                <div className="lead-name">{t.leadName || '-'}</div>
-                                {t.leadStage && <div className="lead-stage-cell">{t.leadStage}</div>}
-                              </td>
-                              <td><div className="agent-cell">{t.owner}</div></td>
-                              <td><span className={`cat-badge ${CAT_CLASS[e.category] || 'cat-service'}`}>{e.category}</span></td>
-                              <td><div className="subcat-text">{e.subcategory || '-'}</div></td>
-                              <td>
-                                {e.isScored ? (
-                                  <><span className={`score-display ${scoreColor}`}>{scoreText}</span><span style={{color:'var(--muted)', fontSize:'11px'}}>/100</span></>
-                                ) : (
-                                  <span className="score-na">N/A</span>
-                                )}
-                              </td>
-                              <td>{bkdn}</td>
-                              <td><span className="msg-count">In:{inCount} Out:{outCount}</span></td>
-                              <td>
-                                {e.autoFail ? <span className="flag-badge autofail">AUTO-FAIL</span> : 
-                                 e.isFlagged ? <span className="flag-badge flagged">FLAGGED</span> : 
-                                 <span style={{color:'var(--muted)', fontSize:'12px'}}>-</span>}
-                              </td>
-                            </tr>
+            {threads.length > 0 && !isProcessing && (
+              <React.Fragment>
+                <div className="stats-bar">
+                  <div className="stat-card"><div className="stat-label">Total Threads</div><div className="stat-value">{stats.total}</div><div className="stat-sub">unique prospects</div></div>
+                  <div className="stat-card blue"><div className="stat-label">Avg QA Score</div><div className="stat-value">{stats.avg}</div><div className="stat-sub">out of 100</div></div>
+                  <div className="stat-card warn"><div className="stat-label">Not Scored</div><div className="stat-value">{stats.na}</div><div className="stat-sub">1 or fewer outbound</div></div>
+                  <div className="stat-card danger"><div className="stat-label">Flagged</div><div className="stat-value">{stats.flagged}</div><div className="stat-sub">severe breaches</div></div>
+                  <div className="stat-card purple"><div className="stat-label">Auto-Fail</div><div className="stat-value">{stats.autoFail}</div><div className="stat-sub">accuracy = 0</div></div>
+                </div>
+
+                <div className="filters">
+                  <span className="filter-label">FILTER:</span>
+                  <select value={filters.agent} onChange={e => setFilters({...filters, agent: e.target.value})}>
+                    <option value="">All Agents</option>{uniqueAgents.map(a => <option key={a} value={a}>{a}</option>)}
+                  </select>
+                  <select value={filters.cat} onChange={e => setFilters({...filters, cat: e.target.value})}>
+                    <option value="">All Categories</option>{uniqueCats.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <select value={filters.stage} onChange={e => setFilters({...filters, stage: e.target.value})}>
+                    <option value="">All Lead Stages</option>{uniqueStages.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  <select value={filters.score} onChange={e => setFilters({...filters, score: e.target.value})}>
+                    <option value="">All Scores</option><option value="high">High (80+)</option><option value="mid">Mid (40-79)</option><option value="low">Low (under 40)</option><option value="na">Not Scored</option>
+                  </select>
+                  <select value={filters.flag} onChange={e => setFilters({...filters, flag: e.target.value})}>
+                    <option value="">All</option><option value="yes">Flagged / Auto-Fail</option>
+                  </select>
+                  <input type="text" placeholder="Search name / ID / notes..." style={{ width: '230px' }} value={filters.search} onChange={e => setFilters({...filters, search: e.target.value})} />
+                  <button className="btn btn-ghost" onClick={() => setFilters({agent:'', cat:'', stage:'', score:'', flag:'', search:''})}>Reset</button>
+                  <div style={{ flex: 1 }}></div>
+                  <button className="btn btn-ghost" onClick={exportCSVData}>Export CSV</button>
+                </div>
+
+                <div className="table-section">
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th onClick={() => handleSort('prospectId')}>Prospect Id {sortConfig.key === 'prospectId' && (sortConfig.dir===1?'↑':'↓')}</th>
+                          <th onClick={() => handleSort('leadName')}>Lead Name {sortConfig.key === 'leadName' && (sortConfig.dir===1?'↑':'↓')}</th>
+                          <th onClick={() => handleSort('owner')}>Agent {sortConfig.key === 'owner' && (sortConfig.dir===1?'↑':'↓')}</th>
+                          <th onClick={() => handleSort('category')}>Category {sortConfig.key === 'category' && (sortConfig.dir===1?'↑':'↓')}</th>
+                          <th>Sub-category</th>
+                          <th onClick={() => handleSort('totalScore')}>Score {sortConfig.key === 'totalScore' && (sortConfig.dir===1?'↑':'↓')}</th>
+                          <th title="Section totals A B C D">A . B . C . D</th>
+                          <th>Msgs</th>
+                          <th>Flag</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {displayedThreads.length === 0 ? (
+                          <tr><td colSpan="9"><div className="empty-state">NO RESULTS MATCH CURRENT FILTERS</div></td></tr>
+                        ) : (
+                          displayedThreads.map((t) => {
+                            const e = t.eval, b = e.scores;
+                            const isExpanded = expandedId === t.prospectId;
+                            const inCount = t.messages.filter(m => m.direction.toLowerCase() === 'inbound').length;
+                            const outCount = t.messages.filter(m => m.direction.toLowerCase() === 'outbound').length;
+                            const isGen = isGeneratingInsight[t.prospectId], insights = geminiInsights[t.prospectId], gError = geminiError[t.prospectId];
                             
-                            {isExpanded && (
-                              <tr className="expanded-row visible" onClick={(e) => e.stopPropagation()}>
-                                <td colSpan="9">
-                                  <div className="expanded-content">
-                                    <div className="exp-card">
-                                      <h4>Conversation Thread ({t.messages.length} messages)</h4>
-                                      <div className="meta-bar">
-                                        {t.leadName && <div className="meta-chip"><span className="lbl">Lead: </span><strong>{t.leadName}</strong></div>}
-                                        {t.studentId && <div className="meta-chip"><span className="lbl">Student ID: </span><strong>{t.studentId}</strong></div>}
-                                        {t.leadStage && <div className="meta-chip"><span className="lbl">Stage: </span><strong>{t.leadStage}</strong></div>}
-                                        <div className="meta-chip"><span className="lbl">Agent: </span><strong>{t.owner}</strong></div>
-                                        <div className="meta-chip"><span className="lbl">Outbound: </span><strong>{outCount}</strong></div>
-                                      </div>
-                                      <div className="chat-thread">
-                                        {t.messages.map((m, idx) => {
-                                          const out = m.direction.toLowerCase() === 'outbound';
-                                          return (
-                                            <div key={idx} className={`chat-bubble bubble-${out ? 'out' : 'in'}`}>
-                                              <div className="bubble-meta">
-                                                {out ? `Agent: ${t.owner}` : `Student: ${t.leadName || 'Student'}`} - {m.timestamp}
-                                              </div>
-                                              {m.text}
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    </div>
-                                    
-                                    <div className="right-col">
-                                      <div className="exp-card">
-                                        <h4>QA Score Breakdown</h4>
-                                        {e.isScored ? (
-                                          <>
-                                            <div className="score-total-row">
-                                              <div className="score-big" style={{color: `var(--${e.totalScore >= 80 ? 'success' : e.totalScore >= 40 ? 'warn' : 'danger'})`}}>{e.totalScore}</div>
-                                              <div style={{flex: 1}}>
-                                                <div style={{fontSize: '10px', color: 'var(--muted)', fontFamily: 'var(--mono)', marginBottom: '6px'}}>TOTAL QA SCORE / 100</div>
-                                                <div className="sbar-track">
-                                                  <div className="sbar-fill" style={{width: `${e.totalScore}%`, background: `var(--${e.totalScore >= 80 ? 'success' : e.totalScore >= 40 ? 'warn' : 'danger'})`}}></div>
-                                                </div>
-                                              </div>
-                                            </div>
-                                            <div className="score-grid">
-                                              {[
-                                                {l:'Accuracy', v:b.accuracy, m:20}, {l:'Resolution', v:b.resolution, m:20},
-                                                {l:'Tone', v:b.tone, m:15}, {l:'Listening', v:b.listening, m:10},
-                                                {l:'Speed', v:b.speed, m:10}, {l:'CRM / Auth', v:b.crm, m:10},
-                                                {l:'Formatting', v:b.formatting, m:5}, {l:'Grammar', v:b.grammar, m:5}, {l:'Closing', v:b.closing, m:5}
-                                              ].map(it => {
-                                                const pct = Math.round(it.v / it.m * 100);
-                                                const c = it.v === 0 ? 'var(--danger)' : it.v === it.m ? 'var(--success)' : 'var(--warn)';
-                                                return (
-                                                  <div key={it.l} className="score-item">
-                                                    <div className="si-label">{it.l}</div>
-                                                    <div className="si-val" style={{color: c}}>{it.v}<span className="si-max">/{it.m}</span></div>
-                                                    <div className="si-track"><div className="si-fill" style={{width: `${pct}%`, background: c}}></div></div>
-                                                  </div>
-                                                );
-                                              })}
-                                            </div>
-                                          </>
-                                        ) : (
-                                          <div className="insufficient-badge">
-                                            NOT SCORED - Insufficient Agent Interaction<br/>
-                                            <span style={{opacity: .7}}>This thread has 1 or fewer outbound messages. A minimum of 2 outbound messages is required for QA scoring.</span>
-                                          </div>
-                                        )}
-                                      </div>
-                                      
-                                      {e.feedback && (
-                                        <div className="exp-card">
-                                          <h4>AI QA Feedback</h4>
-                                          <div className="feedback-text">{e.feedback}</div>
-                                        </div>
-                                      )}
+                            let scoreColor = "score-na", scoreText = "N/A", bkdn = <span style={{color:'var(--muted)', fontFamily:'var(--mono)', fontSize:'10px'}}>-</span>;
+                            if (e.isScored) {
+                              scoreColor = e.totalScore >= 80 ? 'score-good' : e.totalScore >= 40 ? 'score-mid' : 'score-bad';
+                              scoreText = e.totalScore;
+                              bkdn = <span style={{fontFamily:'var(--mono)', fontSize:'10px', color:'var(--muted)'}}>{b.accuracy + b.resolution} . {b.tone + b.listening} . {b.speed + b.crm} . {b.formatting + b.grammar + b.closing}</span>;
+                            }
 
-                                      {(e.isFlagged || e.autoFail) && (
+                            return (
+                              <React.Fragment key={t.prospectId}>
+                                <tr onClick={() => toggleRow(t.prospectId)} className={isExpanded ? 'expanded-open' : ''}>
+                                  <td><div className="prospect-id">{t.prospectId}</div>{t.studentId && <div className="student-id-cell">SID: {t.studentId}</div>}</td>
+                                  <td><div className="lead-name">{t.leadName || '-'}</div>{t.leadStage && <div className="lead-stage-cell">{t.leadStage}</div>}</td>
+                                  <td><div className="agent-cell">{t.owner}</div></td>
+                                  <td><span className={`cat-badge ${CAT_CLASS[e.category] || 'cat-service'}`}>{e.category}</span></td>
+                                  <td><div className="subcat-text">{e.subcategory || '-'}</div></td>
+                                  <td>{e.isScored ? <><span className={`score-display ${scoreColor}`}>{scoreText}</span><span style={{color:'var(--muted)', fontSize:'11px'}}>/100</span></> : <span className="score-na">N/A</span>}</td>
+                                  <td>{bkdn}</td>
+                                  <td><span className="msg-count">In:{inCount} Out:{outCount}</span></td>
+                                  <td>{e.autoFail ? <span className="flag-badge autofail">AUTO-FAIL</span> : e.isFlagged ? <span className="flag-badge flagged">FLAGGED</span> : <span style={{color:'var(--muted)', fontSize:'12px'}}>-</span>}</td>
+                                </tr>
+                                
+                                {isExpanded && (
+                                  <tr className="expanded-row visible" onClick={(e) => e.stopPropagation()}>
+                                    <td colSpan="9">
+                                      <div className="expanded-content">
                                         <div className="exp-card">
-                                          <h4>Flag Details</h4>
-                                          <div className="flag-detail">
-                                            {e.autoFail && <><strong>AUTO-FAIL:</strong> Accuracy scored 0 - a factual inaccuracy was detected. Immediate review required.<br/><br/></>}
-                                            {e.flagReason && <><strong>Flag reason:</strong> {e.flagReason}</>}
+                                          <h4>Conversation Thread ({t.messages.length} messages)</h4>
+                                          <div className="meta-bar">
+                                            {t.leadName && <div className="meta-chip"><span className="lbl">Lead: </span><strong>{t.leadName}</strong></div>}
+                                            {t.studentId && <div className="meta-chip"><span className="lbl">Student ID: </span><strong>{t.studentId}</strong></div>}
+                                            {t.leadStage && <div className="meta-chip"><span className="lbl">Stage: </span><strong>{t.leadStage}</strong></div>}
+                                            <div className="meta-chip"><span className="lbl">Agent: </span><strong>{t.owner}</strong></div>
+                                            <div className="meta-chip"><span className="lbl">Outbound: </span><strong>{outCount}</strong></div>
+                                          </div>
+                                          <div className="chat-thread">
+                                            {t.messages.map((m, idx) => {
+                                              const out = m.direction.toLowerCase() === 'outbound';
+                                              return (
+                                                <div key={idx} className={`chat-bubble bubble-${out ? 'out' : 'in'}`}>
+                                                  <div className="bubble-meta">{out ? `Agent: ${t.owner}` : `Student: ${t.leadName || 'Student'}`} - {m.timestamp}</div>
+                                                  {m.text}
+                                                </div>
+                                              );
+                                            })}
                                           </div>
                                         </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                </td>
-                              </tr>
-                            )}
-                          </React.Fragment>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-              <div className="table-footer">Showing {displayedThreads.length} of {threads.length} threads - click any row to expand</div>
-            </div>
-          </>
-        )}
-      </div>
-    </>
-  );
-}
+                                        
+                                        <div className="right-col">
+                                          <div className="exp-card">
+                                            <h4>QA Score Breakdown</h4>
+                                            {e.isScored ? (
+                                              <React.Fragment>
+                                                <div className="score-total-row">
+                                                  <div className="score-big" style={{color: `var(--${e.totalScore >= 80 ? 'success' : e.totalScore >= 40 ? 'warn' : 'danger'})`}}>{e.totalScore}</div>
+                                                  <div style={{flex: 1}}><div style={{fontSize: '10px', color: 'var(--muted)', fontFamily: 'var(--mono)', marginBottom: '6px'}}>TOTAL QA SCORE / 100</div><div className="sbar-track"><div className="sbar-fill" style={{width: `${e.totalScore}%`, background: `var(--${e.totalScore >= 80 ? 'success' : e.totalScore >= 40 ? 'warn' : 'danger'})`}}></div></div></div>
+                                                </div>
+                                                <div className="score-grid">
+                                                  {[ {l:'Accuracy', v:b.accuracy, m:20}, {l:'Resolution', v:b.resolution, m:20}, {l:'Tone', v:b.tone, m:15}, {l:'Listening', v:b.listening, m:10}, {l:'Speed', v:b.speed, m:10}, {l:'CRM / Auth', v:b.crm, m:10}, {l:'Formatting', v:b.formatting, m:5}, {l:'Grammar', v:b.grammar, m:5}, {l:'Closing', v:b.closing, m:5} ].map(it => {
+                                                    const pct = Math.round(it.v / it.m * 100), c = it.v === 0 ? 'var(--danger)' : it.v === it.m ? 'var(--success)' : 'var(--warn)';
+                                                    return (
+                                                      <div key={it.l} className="score-item">
+                                                        <div className="si-label">{it.l}</div>
+                                                        <div className="si-val" style={{color: c}}>{it.v}<span className="si-max">/{it.m}</span></div>
+                                                        <div className="si-track"><div className="si-fill" style={{width: `${pct}%`, background: c}}></div></div>
+                                                      </div>
+                                                    );
+                                                  })}
+                                                </div>
+                                              </React.Fragment>
+                                            ) : (
+                                              <div className="insufficient-badge">NOT SCORED - Insufficient Agent Interaction<br/><span style={{opacity: .7}}>This thread has 1 or fewer outbound messages. A minimum of 2 outbound messages is required for QA scoring.</span></div>
+                                            )}
+                                          </div>
+                                          
+                                          <div className="gemini-card">
+                                            <h4>✨ Gemini Deep Insights & Coaching Plan</h4>
+                                            {!insights && !isGen && (
+                                              <div style={{ marginTop: '12px' }}>
+                                                <p className="gemini-content" style={{ color: 'var(--muted)', marginBottom: '14px' }}>Use the Gemini AI engine to read this specific thread and generate a concise summary, actionable coaching points, and a ready-to-send coaching email draft for the agent.</p>
+                                                <button className="gemini-btn" onClick={() => generateGeminiInsights(t)} disabled={isGen}>✨ Generate Insights</button>
+                                              </div>
+                                            )}
+                                            {isGen && <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '10px', color: '#93c5fd', fontSize: '13px' }}><span className="gemini-spinner"></span> Analyzing conversation and building coaching plan...</div>}
+                                            {gError && <div style={{ marginTop: '12px', color: 'var(--danger)', fontSize: '12px', padding: '10px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '6px' }}>{gError}</div>}
+                                            {insights && !isGen && (
+                                              <div style={{ marginTop: '4px' }}>
+                                                <div className="gemini-section-title">Summary</div><div className="gemini-content">{insights.summary}</div>
+                                                <div className="gemini-section-title">Coaching Points</div>
+                                                <ul className="gemini-content" style={{ paddingLeft: '20px', margin: '4px 0' }}>{insights.coachingPoints.map((pt, i) => <li key={i} style={{ marginBottom: '4px' }}>{pt}</li>)}</ul>
+                                                <div className="gemini-section-title">Draft Coaching Email</div><div className="gemini-email-box">{insights.draftEmail}</div>
+                                                <button style={{ marginTop: '16px', background: 'transparent', border: '1px solid rgba(255,255,255,0.2)', color: 'var(--muted)', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }} onClick={() => generateGeminiInsights(t)}>Regenerate</button>
+                                              </div>
+                                            )}
+                                          </div>
+
+                                          {e.feedback && !insights && <div className="exp-card"><h4>Standard QA Feedback</h4><div className="feedback-text">{e.feedback}</div></div>}
+                                          {(e.isFlagged || e.autoFail) && (
+                                            <div className="exp-card" style={{ marginTop: '14px' }}>
+                                              <h4>Flag Details</h4>
+                                              <div className="flag-detail" style={{ marginTop: 0 }}>
+                                                {e.autoFail && <><strong>AUTO-FAIL:</strong> Accuracy scored 0 - a factual inaccuracy was detected. Immediate review required.<br/><br/></>}
+                                                {e.flagReason && <><strong>Flag reason:</strong> {e.flagReason}</>}
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )}
+                              </React.Fragment>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="table-footer">Showing {displayedThreads.length} of {threads.length} threads - click any row to expand</div>
+                </div>
+              </React.Fragment>
+            )}
+          </div>
+        </React.Fragment>
+      );
+    }
+
+    // Render the App
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
