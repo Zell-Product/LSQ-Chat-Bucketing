@@ -1,763 +1,1196 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WhatsApp Chat Bucketing & QA</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CX QA Intelligence Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0b0f1a;
+    --surface: #111827;
+    --card: #161e2e;
+    --border: #1f2d45;
+    --accent: #00d4a8;
+    --accent2: #3b82f6;
+    --warn: #f59e0b;
+    --danger: #ef4444;
+    --success: #10b981;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --mono: 'Space Mono', monospace;
+    --sans: 'Sora', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Background grid */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,212,168,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,168,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .wrap { position: relative; z-index: 1; max-width: 1400px; margin: 0 auto; padding: 0 24px; }
+
+  /* Header */
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 20px 0;
+    background: rgba(11,15,26,0.9);
+    backdrop-filter: blur(12px);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .header-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-icon {
+    width: 38px; height: 38px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+  }
+
+  .logo-text { font-size: 17px; font-weight: 600; letter-spacing: -0.3px; }
+  .logo-sub { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 1px; }
+
+  .status-pill {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 5px 12px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    letter-spacing: 0.5px;
+  }
+
+  /* Upload Zone */
+  .upload-section { padding: 60px 0 40px; }
+
+  .upload-hero {
+    text-align: center;
+    margin-bottom: 40px;
+  }
+
+  .upload-hero h1 {
+    font-size: 42px;
+    font-weight: 700;
+    letter-spacing: -1px;
+    background: linear-gradient(135deg, #fff 30%, var(--accent));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 12px;
+  }
+
+  .upload-hero p { color: var(--muted); font-size: 15px; max-width: 480px; margin: 0 auto; line-height: 1.6; }
+
+  .dropzone {
+    border: 2px dashed var(--border);
+    border-radius: 20px;
+    padding: 60px 40px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    background: var(--card);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .dropzone::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at center, rgba(0,212,168,0.04) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .dropzone:hover, .dropzone.drag-over {
+    border-color: var(--accent);
+    background: rgba(0,212,168,0.04);
+  }
+
+  .dropzone-icon { font-size: 48px; margin-bottom: 16px; }
+  .dropzone h3 { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+  .dropzone p { color: var(--muted); font-size: 13px; }
+
+  .upload-btn {
+    display: inline-block;
+    margin-top: 20px;
+    padding: 10px 28px;
+    background: var(--accent);
+    color: #000;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  .upload-btn:hover { opacity: 0.85; }
+
+  #fileInput { display: none; }
+
+  /* Progress */
+  .progress-section {
+    display: none;
+    padding: 40px 0;
+  }
+
+  .progress-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+  }
+
+  .progress-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+  }
+
+  .progress-header h3 { font-size: 18px; font-weight: 600; }
+
+  .progress-counter {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--accent);
+  }
+
+  .progress-bar-wrap {
+    background: var(--bg);
+    border-radius: 100px;
+    height: 6px;
+    overflow: hidden;
+    margin-bottom: 20px;
+  }
+
+  .progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    border-radius: 100px;
+    transition: width 0.4s ease;
+    width: 0%;
+  }
+
+  .progress-log {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    max-height: 120px;
+    overflow-y: auto;
+    line-height: 1.8;
+  }
+
+  .log-line { color: var(--muted); }
+  .log-line.ok { color: var(--success); }
+  .log-line.warn { color: var(--warn); }
+  .log-line.err { color: var(--danger); }
+
+  /* Stats bar */
+  .stats-bar {
+    display: none;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+    padding: 32px 0 20px;
+  }
+
+  .stat-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .stat-card::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--accent);
+  }
+
+  .stat-card.warn::after { background: var(--warn); }
+  .stat-card.danger::after { background: var(--danger); }
+  .stat-card.blue::after { background: var(--accent2); }
+  .stat-card.purple::after { background: #8b5cf6; }
+
+  .stat-label { font-size: 11px; color: var(--muted); letter-spacing: 0.5px; text-transform: uppercase; font-family: var(--mono); margin-bottom: 8px; }
+  .stat-value { font-size: 32px; font-weight: 700; letter-spacing: -1px; }
+  .stat-sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  /* Filters */
+  .filters {
+    display: none;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 0 0 20px;
+    align-items: center;
+  }
+
+  .filter-label { font-size: 12px; color: var(--muted); font-family: var(--mono); margin-right: 4px; }
+
+  select, input[type="text"] {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    padding: 8px 14px;
+    font-size: 13px;
+    font-family: var(--sans);
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  select:focus, input[type="text"]:focus { border-color: var(--accent); }
+
+  .btn {
+    padding: 8px 18px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    font-size: 13px;
+    font-family: var(--sans);
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+
+  .btn-primary { background: var(--accent); color: #000; }
+  .btn-primary:hover { opacity: 0.85; }
+  .btn-ghost { background: var(--card); border: 1px solid var(--border); color: var(--text); }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Table */
+  .table-section { display: none; padding-bottom: 60px; }
+
+  .table-wrap {
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+  }
+
+  table { width: 100%; border-collapse: collapse; }
+
+  thead {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+
+  th {
+    padding: 14px 16px;
+    font-size: 11px;
+    font-family: var(--mono);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--muted);
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+  }
+  th:hover { color: var(--accent); }
+
+  tbody tr {
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s;
+    cursor: pointer;
+  }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: rgba(0,212,168,0.03); }
+  tbody tr.expanded { background: rgba(0,212,168,0.05); }
+
+  td { padding: 14px 16px; font-size: 13px; vertical-align: middle; }
+
+  .prospect-id {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    font-weight: 700;
+  }
+
+  .agent-name { font-weight: 500; font-size: 12px; }
+
+  .cat-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .subcat { font-size: 11px; color: var(--muted); margin-top: 3px; }
+
+  .score-display {
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: 18px;
+  }
+
+  .score-na {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+
+  .flag-icon {
+    display: inline-block;
+    padding: 3px 8px;
+    background: rgba(239,68,68,0.15);
+    color: var(--danger);
+    border-radius: 6px;
+    font-size: 10px;
+    font-weight: 600;
+    font-family: var(--mono);
+  }
+
+  .msg-count {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  /* Expanded row */
+  .expanded-row { display: none; background: var(--bg); }
+  .expanded-row.visible { display: table-row; }
+
+  .expanded-content {
+    padding: 24px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+
+  .expanded-full { grid-column: 1 / -1; }
+
+  .exp-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+
+  .exp-card h4 {
+    font-size: 11px;
+    font-family: var(--mono);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--muted);
+    margin-bottom: 14px;
+  }
+
+  /* Score breakdown */
+  .score-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  .score-item {
+    background: var(--surface);
+    border-radius: 8px;
+    padding: 12px;
+  }
+
+  .score-item-label { font-size: 10px; color: var(--muted); font-family: var(--mono); margin-bottom: 6px; }
+  .score-item-val { font-size: 20px; font-weight: 700; font-family: var(--mono); }
+  .score-item-max { font-size: 10px; color: var(--muted); }
+
+  .score-bar-wrap { background: var(--bg); border-radius: 4px; height: 3px; margin-top: 6px; }
+  .score-bar-fill { height: 3px; border-radius: 4px; }
+
+  /* Chat thread */
+  .chat-thread { max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+
+  .chat-bubble {
+    max-width: 75%;
+    padding: 10px 14px;
+    border-radius: 12px;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .bubble-in { background: var(--surface); border: 1px solid var(--border); align-self: flex-start; border-bottom-left-radius: 4px; }
+  .bubble-out { background: rgba(0,212,168,0.12); border: 1px solid rgba(0,212,168,0.2); align-self: flex-end; border-bottom-right-radius: 4px; }
+
+  .bubble-meta {
+    font-size: 10px;
+    color: var(--muted);
+    font-family: var(--mono);
+    margin-bottom: 3px;
+  }
+
+  .bubble-out .bubble-meta { text-align: right; }
+
+  .feedback-text {
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--text);
+    padding: 12px 16px;
+    background: var(--surface);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 8px 8px 0;
+  }
+
+  .flag-detail {
+    padding: 12px 16px;
+    background: rgba(239,68,68,0.08);
+    border: 1px solid rgba(239,68,68,0.2);
+    border-radius: 8px;
+    font-size: 12px;
+    color: #fca5a5;
+  }
+
+  .insufficient-badge {
+    font-size: 11px;
+    color: var(--warn);
+    font-family: var(--mono);
+    padding: 8px 12px;
+    background: rgba(245,158,11,0.08);
+    border: 1px solid rgba(245,158,11,0.2);
+    border-radius: 8px;
+  }
+
+  /* Category colors */
+  .cat-refund { background: rgba(239,68,68,0.15); color: #fca5a5; }
+  .cat-tech { background: rgba(59,130,246,0.15); color: #93c5fd; }
+  .cat-reg { background: rgba(139,92,246,0.15); color: #c4b5fd; }
+  .cat-ops { background: rgba(245,158,11,0.15); color: #fcd34d; }
+  .cat-leads { background: rgba(16,185,129,0.15); color: #6ee7b7; }
+  .cat-academic { background: rgba(236,72,153,0.15); color: #f9a8d4; }
+  .cat-service { background: rgba(0,212,168,0.15); color: #5eead4; }
+
+  .score-good { color: var(--success); }
+  .score-mid { color: var(--warn); }
+  .score-bad { color: var(--danger); }
+
+  /* Export btn */
+  .export-bar {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    padding: 0 0 16px;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+  /* Animations */
+  @keyframes fadeIn { from { opacity:0; transform: translateY(10px); } to { opacity:1; transform: translateY(0); } }
+  .fade-in { animation: fadeIn 0.4s ease forwards; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spin { animation: spin 1s linear infinite; display: inline-block; }
+
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  .thread-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    text-align: center;
+    color: var(--muted);
+    padding: 4px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+</style>
 </head>
 <body>
-  <div id="root"></div>
-  <script type="text/babel">
-    const { useState, useRef, useCallback, useEffect } = React;
 
-    // ── Taxonomy (display + colors only) ─────────────────────────────────────
-    const TAXONOMY = {
-      "Refund": ["Service & Quality Gap", "Sales & Admissions Issue", "Personal & Medical", "Financial & Pricing"],
-      "Tech & Platform/LMS": ["Account & Login Access", "Content & Class Visibility", "Validity & Transfers", "Tech Support & Platforms"],
-      "Registrations & Exams": ["Registration & Delays", "Exemptions", "Documents & Verification", "Registration Codes & IR"],
-      "Operations & Logistics": ["Onboarding Journey", "Books & Dispatch", "Batch Allocation & Timings"],
-      "New Leads & Referrals": ["New Lead", "Referral"],
-      "Academics & Careers": ["Academic Doubts", "Placements"],
-      "Service": ["Faculty Issue", "Mentor Related Query", "General Queries"],
-    };
+<header>
+  <div class="wrap header-inner">
+    <div class="logo">
+      <div class="logo-icon">📊</div>
+      <div>
+        <div class="logo-text">CX QA Intelligence</div>
+        <div class="logo-sub">WHATSAPP SUPPORT ANALYSER</div>
+      </div>
+    </div>
+    <div class="status-pill" id="statusPill">READY</div>
+  </div>
+</header>
 
-    const CATEGORY_COLORS = {
-      "Refund": "#ef4444",
-      "Tech & Platform/LMS": "#8b5cf6",
-      "Registrations & Exams": "#f59e0b",
-      "Operations & Logistics": "#3b82f6",
-      "New Leads & Referrals": "#10b981",
-      "Academics & Careers": "#06b6d4",
-      "Service": "#ec4899",
-    };
-    const CATEGORY_BG = {
-      "Refund": "#fef2f2", "Tech & Platform/LMS": "#f5f3ff",
-      "Registrations & Exams": "#fffbeb", "Operations & Logistics": "#eff6ff",
-      "New Leads & Referrals": "#f0fdf4", "Academics & Careers": "#ecfeff",
-      "Service": "#fdf2f8",
-    };
+<div class="wrap">
 
-    // ── The full, precise classification prompt ────────────────────────────────
-    // This is kept as a constant so it's easy to audit/edit
-    const CLASSIFICATION_PROMPT = `You are a QA auditor for an education company's WhatsApp customer support team.
+  <!-- Upload -->
+  <div class="upload-section" id="uploadSection">
+    <div class="upload-hero">
+      <h1>QA Dashboard</h1>
+      <p>Upload your WhatsApp CRM export CSV. Each conversation thread will be scored, categorised, and reviewed by AI.</p>
+    </div>
+    <div class="dropzone" id="dropzone">
+      <div class="dropzone-icon">📂</div>
+      <h3>Drop your CSV file here</h3>
+      <p>Supports WhatsApp CRM exports with columns: Student ID, Prospect ID, Notes, Direction, Owner, Activity Date</p>
+      <div class="upload-btn" onclick="document.getElementById('fileInput').click()">Choose File</div>
+      <input type="file" id="fileInput" accept=".csv">
+    </div>
+    <div style="margin-top:16px; text-align:center;">
+      <button class="btn btn-ghost" onclick="loadSample()">▶ Load Sample Data</button>
+    </div>
+  </div>
 
-Your task is TWO-FOLD:
-1. CATEGORIZE the conversation into the correct Category and Sub-category.
-2. SCORE the agent on a 100-point rubric.
+  <!-- Progress -->
+  <div class="progress-section" id="progressSection">
+    <div class="progress-card fade-in">
+      <div class="progress-header">
+        <h3>⚙️ Processing Conversations</h3>
+        <span class="progress-counter" id="progressCounter">0 / 0</span>
+      </div>
+      <div class="progress-bar-wrap"><div class="progress-bar" id="progressBar"></div></div>
+      <div class="progress-log" id="progressLog"></div>
+    </div>
+  </div>
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PART 1 — CATEGORIZATION
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Use the EXACT taxonomy below. Match based on the PRIMARY issue in the conversation.
+  <!-- Stats -->
+  <div class="stats-bar" id="statsBar">
+    <div class="stat-card">
+      <div class="stat-label">Total Threads</div>
+      <div class="stat-value" id="statTotal">0</div>
+      <div class="stat-sub">unique prospects</div>
+    </div>
+    <div class="stat-card blue">
+      <div class="stat-label">Avg Score</div>
+      <div class="stat-value" id="statAvg">—</div>
+      <div class="stat-sub">out of 100</div>
+    </div>
+    <div class="stat-card warn">
+      <div class="stat-label">Not Scored</div>
+      <div class="stat-value" id="statNA">0</div>
+      <div class="stat-sub">insufficient interaction</div>
+    </div>
+    <div class="stat-card danger">
+      <div class="stat-label">Flagged</div>
+      <div class="stat-value" id="statFlagged">0</div>
+      <div class="stat-sub">severe breaches</div>
+    </div>
+    <div class="stat-card purple">
+      <div class="stat-label">Auto-Fail</div>
+      <div class="stat-value" id="statFail">0</div>
+      <div class="stat-sub">accuracy = 0</div>
+    </div>
+  </div>
 
-CATEGORY: Refund
-  • Sub: Service & Quality Gap      → Student unhappy with services, faculty problem, mentor problem, content issue.
-  • Sub: Sales & Admissions Issue   → Misselling, loan issue, registration issue that leads to a refund.
-  • Sub: Personal & Medical         → Medical issue, change of mind, personal emergency.
-  • Sub: Financial & Pricing        → Financial hardship, double payment, discount disputes, pricing complaint.
+  <!-- Filters -->
+  <div class="filters" id="filtersBar">
+    <span class="filter-label">FILTER:</span>
+    <select id="filterAgent"><option value="">All Agents</option></select>
+    <select id="filterCat"><option value="">All Categories</option></select>
+    <select id="filterScore">
+      <option value="">All Scores</option>
+      <option value="high">High (≥80)</option>
+      <option value="mid">Mid (40–79)</option>
+      <option value="low">Low (&lt;40)</option>
+      <option value="na">Not Scored</option>
+    </select>
+    <select id="filterFlag">
+      <option value="">All</option>
+      <option value="flagged">Flagged Only</option>
+    </select>
+    <input type="text" id="filterSearch" placeholder="Search prospect / notes…" style="width:220px;">
+    <button class="btn btn-primary" onclick="applyFilters()">Apply</button>
+    <button class="btn btn-ghost" onclick="resetFilters()">Reset</button>
+    <div style="flex:1"></div>
+    <div class="export-bar">
+      <button class="btn btn-ghost" onclick="exportCSV()">⬇ Export CSV</button>
+    </div>
+  </div>
 
-CATEGORY: Tech & Platform/LMS
-  • Sub: Account & Login Access     → Password reset, suspension/unsuspension, account blocked or unavailable, revoking access.
-  • Sub: Content & Class Visibility → Recording not visible, batch recordings access, live batch access issues, pre-learning access.
-  • Sub: Validity & Transfers       → Validity issue, course expired, validity freeze, batch change (tech-related).
-  • Sub: Tech Support & Platforms   → LMS downtime, mobile app bug, Analyst Prep platform issue, Surgent platform issue.
+  <!-- Table -->
+  <div class="table-section" id="tableSection">
+    <div class="table-wrap">
+      <table id="resultsTable">
+        <thead>
+          <tr>
+            <th onclick="sortTable('prospectId')">Prospect ID ↕</th>
+            <th onclick="sortTable('owner')">Agent ↕</th>
+            <th onclick="sortTable('category')">Category ↕</th>
+            <th>Sub-category</th>
+            <th onclick="sortTable('totalScore')">Score ↕</th>
+            <th>Breakdown</th>
+            <th>Msgs</th>
+            <th>Flag</th>
+          </tr>
+        </thead>
+        <tbody id="resultsBody"></tbody>
+      </table>
+    </div>
+    <div style="text-align:center; padding:16px 0; color:var(--muted); font-family:var(--mono); font-size:11px;" id="tableFooter"></div>
+  </div>
 
-CATEGORY: Registrations & Exams
-  • Sub: Registration & Delays      → Booking exam papers, exam fees payment, exam fee reimbursement, registration delay or error, ACCA/IMA/CFA/FRM registration issues.
-  • Sub: Exemptions                 → Exemption claim, exemption not reflecting in portal.
-  • Sub: Documents & Verification   → Document submission, document verification.
-  • Sub: Registration Codes & IR    → Exam codes issue, code change request, IR (Initial Registration) issue.
+</div>
 
-CATEGORY: Operations & Logistics
-  • Sub: Onboarding Journey         → Schedule onboarding, rescheduling onboarding, missed onboarding, post-onboarding queries, enrollment form.
-  • Sub: Books & Dispatch           → Books delivery delay, tracking ID not received, damaged books, books request form, international delivery of books.
-  • Sub: Batch Allocation & Timings → Batch timings query, batch not yet allocated, batch change request (non-technical).
+<script>
+// ─── State ──────────────────────────────────────────────────────────────────
+let allResults = [];
+let filteredResults = [];
+let sortKey = '';
+let sortDir = 1;
 
-CATEGORY: New Leads & Referrals
-  • Sub: New Lead                   → Person is enquiring to join a course; no existing enrollment.
-  • Sub: Referral                   → Referral program query or referral submission.
+// ─── Category colours ───────────────────────────────────────────────────────
+const CAT_CLASS = {
+  'Refund': 'cat-refund',
+  'Tech & Platform/LMS': 'cat-tech',
+  'Registrations & Exams': 'cat-reg',
+  'Operations & Logistics': 'cat-ops',
+  'New Leads & Referrals': 'cat-leads',
+  'Academics & Careers': 'cat-academic',
+  'Service': 'cat-service',
+};
 
-CATEGORY: Academics & Careers
-  • Sub: Academic Doubts            → Conceptual doubt, mock exam or mock test query, study guidance.
-  • Sub: Placements                 → Placement assistance, job query, career support.
+// ─── Score colour ───────────────────────────────────────────────────────────
+function scoreClass(s) {
+  if (s === null || s === undefined) return '';
+  if (s >= 80) return 'score-good';
+  if (s >= 40) return 'score-mid';
+  return 'score-bad';
+}
 
-CATEGORY: Service
-  • Sub: Faculty Issue              → Complaint or query specifically about a faculty member.
-  • Sub: Mentor Related Query       → Query about a mentor or mentoring session.
-  • Sub: General Queries            → Everything else that does not fit above.
+function scoreBarColor(s) {
+  if (s >= 80) return 'var(--success)';
+  if (s >= 40) return 'var(--warn)';
+  return 'var(--danger)';
+}
 
-HARD OVERRIDE RULES (apply these FIRST before any other logic):
-  RULE 1 — Agent Override: If the Agent Owner field is exactly "Amisha Suthar", "Priyal Bhargava", or "Sehar Sayed", you MUST set Category="Operations & Logistics" AND Subcategory="Onboarding Journey". No exceptions.
-  RULE 2 — Mock/Mock Exam keyword: If the chat text contains "mock" or "mock exam" or "mock test", you MUST set Category="Academics & Careers" AND Subcategory="Academic Doubts".
-  RULE 3 — Exam Fee / Booking keyword: If the chat is about booking an exam, paying exam fees, or getting exam fee reimbursement, you MUST set Category="Registrations & Exams" AND Subcategory="Registration & Delays".
+// ─── Dropzone ───────────────────────────────────────────────────────────────
+const dz = document.getElementById('dropzone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f) handleFile(f);
+});
+document.getElementById('fileInput').addEventListener('change', e => {
+  if (e.target.files[0]) handleFile(e.target.files[0]);
+});
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PART 2 — QA SCORING (Total = 100 points)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Score STRICTLY. Do not be lenient. Use only the allowed point values.
+// ─── Sample data ────────────────────────────────────────────────────────────
+function loadSample() {
+  const sample = `Student ID,Prospect ID,Notes,Direction,Owner,Activity Date
+S001,P001,"Hi I need help with my login",Inbound,John Smith,2024-01-15 09:00:00
+S001,P001,"Hello! I can see your account. Let me check that for you.",Outbound,John Smith,2024-01-15 09:02:00
+S001,P001,"Your password has been reset. Please check your email for the link. Also, do let me know if you face any issues opening the app after logging in!",Outbound,John Smith,2024-01-15 09:04:00
+S001,P001,"Thank you so much! Got access now",Inbound,John Smith,2024-01-15 09:10:00
+S002,P002,"I want a refund my mentor is terrible",Inbound,Jane Doe,2024-01-15 10:00:00
+S002,P002,"I understand your frustration. Could you share more details?",Outbound,Jane Doe,2024-01-15 10:15:00
+S002,P002,"He never responds to my messages and missed 3 sessions",Inbound,Jane Doe,2024-01-15 10:16:00
+S002,P002,"I sincerely apologise for this experience. I am raising a ticket right now and escalating this to our mentor team. You will hear back within 24 hours regarding your refund.",Outbound,Jane Doe,2024-01-15 10:20:00
+S003,P003,"When will my books arrive?",Inbound,Amisha Suthar,2024-01-15 11:00:00
+S003,P003,"Hi! Let me track that for you.",Outbound,Amisha Suthar,2024-01-15 11:01:00
+S003,P003,"Your books were dispatched on Jan 12. Tracking ID: TRK12345. Should arrive by Jan 17.",Outbound,Amisha Suthar,2024-01-15 11:02:00
+S004,P004,"I have a doubt about NPV calculation in mock exam",Inbound,Alex Kumar,2024-01-15 12:00:00
+S004,P004,"Sure! NPV = sum of discounted cash flows minus initial investment.",Outbound,Alex Kumar,2024-01-15 12:05:00
+S004,P004,"Thank you that makes sense",Inbound,Alex Kumar,2024-01-15 12:06:00
+S005,P005,"Hello I want to join the CFA course",Inbound,Maria Jones,2024-01-15 13:00:00
+S006,P006,"My batch recordings are not showing in LMS",Inbound,Robert Chen,2024-01-15 14:00:00
+S006,P006,"Please provide your enrollment number",Outbound,Robert Chen,2024-01-15 14:30:00
+S006,P006,"It is EN7890",Inbound,Robert Chen,2024-01-15 14:31:00
+S006,P006,"I've checked and your recordings are now accessible. Please clear cache and try again.",Outbound,Robert Chen,2024-01-15 14:35:00`;
+  const blob = new Blob([sample], {type: 'text/csv'});
+  handleFile(new File([blob], 'sample.csv', {type: 'text/csv'}));
+}
 
-[A] RESOLUTION & ACCURACY (40 pts)
-  • accuracyScore (20 or 0):
-      20 = All information shared (fees, deadlines, codes, course details) is 100% correct. Even one factual error = 0. A score of 0 here is an AUTO-FAIL.
-      0  = Any factual inaccuracy found, or cannot be verified.
+// ─── File handling ───────────────────────────────────────────────────────────
+function handleFile(file) {
+  Papa.parse(file, {
+    header: true,
+    skipEmptyLines: true,
+    complete: async (res) => {
+      if (!res.data.length) { alert('CSV is empty.'); return; }
+      await processData(res.data);
+    },
+    error: (e) => alert('Parse error: ' + e.message)
+  });
+}
 
-  • resolutionScore (20, 10, or 0):
-      20 = Issue fully resolved AND agent anticipated the student's likely next question before closing ("The +1 Method").
-      10 = Issue directly answered, but agent did NOT anticipate follow-up needs.
-      0  = Issue only partially addressed or the student would definitely need to follow up again.
+// ─── Column name normaliser ──────────────────────────────────────────────────
+function norm(row, ...keys) {
+  for (const k of keys) {
+    const found = Object.keys(row).find(r => r.toLowerCase().replace(/[\s_]/g,'') === k.toLowerCase().replace(/[\s_]/g,''));
+    if (found && row[found] !== undefined) return row[found];
+  }
+  return '';
+}
 
-[B] EMPATHY & TONE (25 pts)
-  • toneScore (15, 7, or 0):
-      15 = Warm, empathetic, used student's name naturally, validated feelings, used appropriate emojis (😊, 👍).
-      7  = Neutral and professional, but robotic — no personal warmth.
-      0  = Cold, dismissive, impatient, or rude in any way.
+// ─── Main processing ─────────────────────────────────────────────────────────
+async function processData(rows) {
+  document.getElementById('uploadSection').style.display = 'none';
+  document.getElementById('progressSection').style.display = 'block';
+  document.getElementById('statusPill').textContent = 'PROCESSING';
 
-  • listeningScore (10, 5, or 0):
-      10 = Seamlessly picked up on all prior context — no redundant questions.
-      5  = Asked student to repeat or clarify a minor detail already mentioned.
-      0  = Asked for information the student had already explicitly provided.
+  const log = (msg, cls='') => {
+    const el = document.getElementById('progressLog');
+    el.innerHTML += `<div class="log-line ${cls}">${msg}</div>`;
+    el.scrollTop = el.scrollHeight;
+  };
 
-[C] PROCESS & EFFICIENCY (20 pts)
-  • speedScore (10, 5, or 0):
-      Look at the timestamps in the conversation.
-      10 = First reply within 1-2 minutes AND subsequent replies within 60 seconds; if student was put on hold, agent communicated wait time.
-      5  = Slightly delayed (2-5 minutes initial TAT, or 1-3 min active gaps), or left student on "read" briefly.
-      0  = SLA clearly breached — long unexplained silences or student had to chase the agent.
+  log(`Parsed ${rows.length} rows from CSV`);
 
-  • crmScore (10, 5, or 0):
-      Infer from context clues (e.g., agent says "I've raised a ticket", "I've updated your profile", "I've tagged this").
-      10 = Evidence of correct ticket logging and identity verification (if needed).
-      5  = Logged or verified, but did it incorrectly or incompletely.
-      0  = No evidence of any CRM logging or identity check.
+  // Group by Prospect ID
+  const threads = {};
+  for (const row of rows) {
+    const pid = norm(row,'prospectid','prospect id','prospect_id','ProspectID') || 'UNKNOWN';
+    if (!threads[pid]) threads[pid] = [];
+    threads[pid].push({
+      studentId: norm(row,'studentid','student id','student_id','StudentID'),
+      notes: norm(row,'notes','note','Notes','message','chat'),
+      direction: norm(row,'direction','Direction'),
+      owner: norm(row,'owner','Owner','agent','agentname'),
+      activityDate: norm(row,'activitydate','activity date','activity_date','ActivityDate','timestamp','date'),
+      prospectId: pid
+    });
+  }
 
-[D] COMMUNICATION (15 pts)
-  • formattingScore (5, 2, or 0):
-      5 = Messages are chunked into short, readable bursts; uses *bold* for key terms, or bullet points for steps; easy to read on mobile.
-      2 = Mostly readable but slightly cluttered.
-      0 = Single massive wall of text that is hard to read on a mobile screen.
+  const pids = Object.keys(threads);
+  log(`Grouped into ${pids.length} conversation threads`);
 
-  • grammarScore (5, 2, or 0):
-      5 = Professional language throughout; no slang, no abbreviations like "pls", "u", "thx", "hie", "k".
-      2 = Minor typos but overall readable and professional.
-      0 = Heavy spelling errors, unprofessional text-speak, or slang that undermines credibility.
+  // Sort each thread chronologically
+  for (const pid of pids) {
+    threads[pid].sort((a,b) => new Date(a.activityDate) - new Date(b.activityDate));
+  }
 
-  • closingScore (5 or 0):
-      5 = Agent explicitly confirmed the issue was resolved and used a proper sign-off (e.g., "Is there anything else I can help you with?").
-      0 = Chat ended abruptly, agent ghosted, or no resolution confirmation was given.
+  // Populate filter dropdowns
+  const agents = [...new Set(rows.map(r => norm(r,'owner','Owner','agent')).filter(Boolean))];
+  const agentSel = document.getElementById('filterAgent');
+  agents.forEach(a => agentSel.innerHTML += `<option value="${a}">${a}</option>`);
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PART 3 — FEEDBACK & FLAG
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  • qaFeedback: Write 1-2 specific, actionable sentences for the agent. Reference exact moments from the chat. Be constructive but honest.
-  • flagged (true/false): Set to TRUE if ANY of these apply: accuracyScore=0, toneScore=0, speedScore=0, crmScore=0, totalScore < 40, or any deeply concerning behaviour.
-  • flagReason: If flagged=true, give a short 3-6 word reason (e.g., "Auto-Fail: Incorrect fee info", "Rude tone detected", "SLA severely breached"). Empty string if not flagged.
+  const total = pids.length;
+  let processed = 0;
+  allResults = [];
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CONVERSATION TO ANALYSE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Student Name: {{STUDENT_NAME}}
-Lead Stage: {{LEAD_STAGE}}
-Agent Owner: {{AGENT_OWNER}}
+  for (const pid of pids) {
+    const msgs = threads[pid];
+    const outbound = msgs.filter(m => m.direction?.toLowerCase() === 'outbound');
+    const owner = msgs.find(m => m.owner)?.owner || 'Unknown';
 
-Chat Transcript:
-{{TRANSCRIPT}}`;
+    // Hard override by agent name
+    const ONBOARDING_AGENTS = ['amisha suthar', 'priyal bhargava', 'sehar sayed'];
+    const isOnboarding = ONBOARDING_AGENTS.includes(owner.toLowerCase().trim());
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
-    function parseCSV(file) {
-      return new Promise((resolve, reject) => {
-        if (window.Papa) {
-          window.Papa.parse(file, { header: true, skipEmptyLines: true, complete: (r) => resolve(r.data), error: reject });
-        } else {
-          const script = document.createElement("script");
-          script.src = "https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js";
-          script.onload = () => window.Papa.parse(file, { header: true, skipEmptyLines: true, complete: (r) => resolve(r.data), error: reject });
-          script.onerror = () => reject(new Error("Failed to load CSV parser."));
-          document.head.appendChild(script);
-        }
-      });
-    }
+    // Check if mock keyword
+    const fullText = msgs.map(m => m.notes).join(' ').toLowerCase();
+    const hasMock = /\bmock\b|\bmock exam\b|\bmock test\b/.test(fullText);
 
-    function buildConversations(rows) {
-      const map = {};
-      rows.forEach((row) => {
-        const pid = row["Prospect Id"] || row["prospect_id"] || "unknown";
-        if (!map[pid]) {
-          map[pid] = {
-            prospectId: pid,
-            studentId: row["Student ID"] || row["student_id"] || "",
-            name: row["Lead Name"] || row["First Name"] || "Unknown",
-            email: row["Email Address"] || "",
-            phone: row["Phone Number"] || "",
-            leadStage: row["Lead Stage"] || row["BD Lead Stage"] || "",
-            currentBatch: row["Current Batch"] || "",
-            owner: row["Owner (User Name)"] || row["Owner"] || "",
-            messages: [],
-          };
-        }
-        const note = (row["Notes"] || "").trim();
-        if (note && note.length > 2) {
-          map[pid].messages.push({
-            date: row["Activity Date"] || "",
-            direction: row["Direction"] || "unknown",
-            note,
-          });
-        }
-      });
-      return Object.values(map)
-        .map((c) => ({ ...c, messages: c.messages.sort((a, b) => new Date(a.date) - new Date(b.date)) }))
-        .filter((c) => c.messages.length > 0);
-    }
+    // Check exam fee
+    const hasExamFee = /exam fee|booking.*exam|exam.*booking|fee reimbursement/.test(fullText);
 
-    function conversationToText(conv) {
-      return conv.messages
-        .slice(0, 35)
-        .map((m) => `[${m.direction} | ${m.date}] ${m.note.slice(0, 500)}`)
-        .join("\n");
-    }
+    // Insufficient outbound
+    const insufficient = outbound.length <= 1;
 
-    async function classifyConversation(conv, apiKey, attempt = 0) {
-      const delays = [1500, 3000, 6000, 12000, 24000];
-      const transcript = conversationToText(conv);
+    log(`Processing ${pid} — ${msgs.length} msgs, ${outbound.length} outbound`);
 
-      const filledPrompt = CLASSIFICATION_PROMPT
-        .replace("{{STUDENT_NAME}}", conv.name)
-        .replace("{{LEAD_STAGE}}", conv.leadStage || "N/A")
-        .replace("{{AGENT_OWNER}}", conv.owner || "Unknown")
-        .replace("{{TRANSCRIPT}}", transcript);
-
-      const payload = {
-        contents: [{ parts: [{ text: filledPrompt }] }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: "OBJECT",
-            properties: {
-              category:      { type: "STRING" },
-              subcategory:   { type: "STRING" },
-              summary:       { type: "STRING", description: "1 concise sentence describing the student's primary issue" },
-              sentiment:     { type: "STRING", enum: ["Positive", "Neutral", "Negative"] },
-              scores: {
-                type: "OBJECT",
-                properties: {
-                  accuracyScore:    { type: "INTEGER", description: "20 or 0 only" },
-                  resolutionScore:  { type: "INTEGER", description: "20, 10, or 0 only" },
-                  toneScore:        { type: "INTEGER", description: "15, 7, or 0 only" },
-                  listeningScore:   { type: "INTEGER", description: "10, 5, or 0 only" },
-                  speedScore:       { type: "INTEGER", description: "10, 5, or 0 only" },
-                  crmScore:         { type: "INTEGER", description: "10, 5, or 0 only" },
-                  formattingScore:  { type: "INTEGER", description: "5, 2, or 0 only" },
-                  grammarScore:     { type: "INTEGER", description: "5, 2, or 0 only" },
-                  closingScore:     { type: "INTEGER", description: "5 or 0 only" },
-                },
-                required: ["accuracyScore","resolutionScore","toneScore","listeningScore","speedScore","crmScore","formattingScore","grammarScore","closingScore"]
-              },
-              totalScore:  { type: "INTEGER", description: "Sum of all nine scores. Max 100." },
-              qaFeedback:  { type: "STRING", description: "1-2 specific, actionable sentences for the agent referencing exact moments in the chat." },
-              flagged:     { type: "BOOLEAN" },
-              flagReason:  { type: "STRING", description: "Short 3-6 word reason if flagged, else empty string." },
-            },
-            required: ["category","subcategory","summary","sentiment","scores","totalScore","qaFeedback","flagged","flagReason"]
-          }
-        }
+    let result;
+    try {
+      result = await callClaude(pid, msgs, isOnboarding, hasMock, hasExamFee, insufficient, owner);
+    } catch(e) {
+      log(`⚠ Error on ${pid}: ${e.message}`, 'warn');
+      result = {
+        prospectId: pid, owner, msgs,
+        category: 'Service', subcategory: 'General Queries',
+        totalScore: null, insufficient: true,
+        breakdown: {}, feedback: 'Could not process.', flagged: false, flagReason: '',
+        autoFail: false
       };
-
-      try {
-        const resp = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`,
-          { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }
-        );
-        if (!resp.ok) {
-          const err = await resp.json().catch(() => ({}));
-          throw new Error(`HTTP ${resp.status}: ${err?.error?.message || "Invalid Key or quota exceeded"}`);
-        }
-        const data = await resp.json();
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!text) throw new Error("Empty model response");
-        return JSON.parse(text);
-      } catch (err) {
-        const isKeyError = err.message.includes("400") || err.message.includes("403") || err.message.includes("Invalid");
-        if (attempt < delays.length && !isKeyError) {
-          await new Promise(r => setTimeout(r, delays[attempt]));
-          return classifyConversation(conv, apiKey, attempt + 1);
-        }
-        return {
-          category: "Service", subcategory: "General Queries",
-          summary: "Classification failed: " + err.message, sentiment: "Neutral",
-          scores: { accuracyScore:0, resolutionScore:0, toneScore:0, listeningScore:0, speedScore:0, crmScore:0, formattingScore:0, grammarScore:0, closingScore:0 },
-          totalScore: 0, qaFeedback: "Failed to process. Check API key or rate limits.", flagged: true, flagReason: "API Error"
-        };
-      }
     }
 
-    // ── Mini Components ───────────────────────────────────────────────────────
-    function MiniBar({ data, total }) {
-      return (
-        <div className="flex flex-col gap-2">
-          {Object.entries(data).sort(([,a],[,b]) => b-a).map(([cat, count]) => (
-            <div key={cat} className="flex items-center gap-2">
-              <div className="w-36 text-[11px] text-slate-500 text-right shrink-0 truncate" title={cat}>{cat}</div>
-              <div className="flex-1 bg-slate-100 rounded h-4 overflow-hidden">
-                <div style={{ width:`${(count/total)*100}%`, background: CATEGORY_COLORS[cat]||"#94a3b8" }}
-                  className="h-full rounded transition-all duration-700 flex items-center justify-end pr-1.5">
-                  {count > 0 && <span className="text-[9px] text-white font-bold">{count}</span>}
-                </div>
-              </div>
-              <div className="w-8 text-[11px] text-slate-400 text-right">{Math.round((count/total)*100)}%</div>
-            </div>
-          ))}
+    result.prospectId = pid;
+    result.owner = owner;
+    result.msgs = msgs;
+    result.insufficient = insufficient;
+    allResults.push(result);
+
+    processed++;
+    const pct = Math.round(processed / total * 100);
+    document.getElementById('progressBar').style.width = pct + '%';
+    document.getElementById('progressCounter').textContent = `${processed} / ${total}`;
+    log(`✓ ${pid} → ${result.category} | Score: ${result.totalScore ?? 'N/A'}`, 'ok');
+  }
+
+  // Populate category filter
+  const cats = [...new Set(allResults.map(r => r.category))];
+  const catSel = document.getElementById('filterCat');
+  cats.forEach(c => catSel.innerHTML += `<option value="${c}">${c}</option>`);
+
+  log('✅ All conversations processed!', 'ok');
+  document.getElementById('statusPill').textContent = 'COMPLETE';
+
+  setTimeout(() => {
+    document.getElementById('progressSection').style.display = 'none';
+    renderStats();
+    filteredResults = [...allResults];
+    renderTable();
+    document.getElementById('statsBar').style.display = 'grid';
+    document.getElementById('filtersBar').style.display = 'flex';
+    document.getElementById('tableSection').style.display = 'block';
+  }, 800);
+}
+
+// ─── Claude API call ─────────────────────────────────────────────────────────
+async function callClaude(pid, msgs, isOnboarding, hasMock, hasExamFee, insufficient, owner) {
+  const threadText = msgs.map((m,i) =>
+    `[${i+1}] ${m.direction?.toUpperCase()} | ${m.activityDate} | ${m.owner}\n${m.notes}`
+  ).join('\n\n');
+
+  let overrideNote = '';
+  if (isOnboarding) overrideNote = 'HARD OVERRIDE: Agent is Amisha Suthar / Priyal Bhargava / Sehar Sayed → Category=Operations & Logistics, Subcategory=Onboarding Journey.';
+  if (hasMock) overrideNote = 'HARD OVERRIDE: Chat contains mock/mock exam/mock test → Category=Academics & Careers, Subcategory=Academic Doubts.';
+  if (hasExamFee) overrideNote = 'HARD OVERRIDE: Chat is about exam fees/booking → Category=Registrations & Exams, Subcategory=Registration & Delays.';
+
+  const scoringInstruction = insufficient
+    ? 'Do NOT score this conversation (insufficient outbound messages). Set totalScore=null and all breakdown scores to null.'
+    : `Score using this rubric (total 100 pts):
+[A] RESOLUTION & ACCURACY (40pts):
+  accuracy: 20=all info correct, 0=any inaccuracy (auto-fail if 0)
+  resolution: 20=resolved+anticipated follow-up, 10=resolved only, 0=partial
+[B] EMPATHY & TONE (25pts):
+  tone: 15=warm+name+empathy+emojis, 7=neutral/robotic, 0=cold/rude
+  listening: 10=no redundant questions, 5=minor repeat, 0=asked for already-given info
+[C] PROCESS & EFFICIENCY (20pts):
+  speed: 10=first reply <2min+subsequent <60s, 5=slightly delayed, 0=SLA breached
+  crm: 10=perfect ticket/ID verification, 5=partial, 0=none
+[D] COMMUNICATION (15pts):
+  formatting: 5=short readable bursts+bullets, 2=mostly ok, 0=wall of text
+  grammar: 5=professional no slang, 2=minor typos, 0=heavy errors
+  closing: 5=confirmed resolved+sign-off, 0=abrupt/ghosted
+
+FLAG if: accuracy=0 OR tone=0 OR speed=0 OR totalScore<40. State reason.
+AUTO-FAIL if accuracy=0.`;
+
+  const prompt = `You are a CX QA Analyst. Analyse this WhatsApp support conversation and return a JSON object.
+
+CONVERSATION (Prospect ID: ${pid}):
+${threadText}
+
+${overrideNote}
+
+CATEGORISATION TAXONOMY:
+- Refund: Service & Quality Gap | Sales & Admissions Issue | Personal & Medical | Financial & Pricing
+- Tech & Platform/LMS: Account & Login Access | Content & Class Visibility | Validity & Transfers | Tech Support & Platforms
+- Registrations & Exams: Registration & Delays | Exemptions | Documents & Verification | Registration Codes & IR
+- Operations & Logistics: Onboarding Journey | Books & Dispatch | Batch Allocation & Timings
+- New Leads & Referrals: New Lead | Referral
+- Academics & Careers: Academic Doubts | Placements
+- Service: Faculty Issue | Mentor Related Query | General Queries
+
+${scoringInstruction}
+
+Return ONLY valid JSON (no markdown, no backticks) in this exact shape:
+{
+  "category": "...",
+  "subcategory": "...",
+  "totalScore": 85,
+  "breakdown": {
+    "accuracy": 20, "resolution": 20, "tone": 15, "listening": 10,
+    "speed": 10, "crm": 5, "formatting": 2, "grammar": 2, "closing": 0
+  },
+  "feedback": "1-2 sentence actionable QA feedback for the agent.",
+  "flagged": false,
+  "flagReason": "",
+  "autoFail": false
+}`;
+
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1000,
+      messages: [{ role: 'user', content: prompt }]
+    })
+  });
+
+  const data = await resp.json();
+  const text = data.content?.map(c => c.text || '').join('') || '';
+  const clean = text.replace(/```json|```/g,'').trim();
+  const parsed = JSON.parse(clean);
+  return parsed;
+}
+
+// ─── Stats ───────────────────────────────────────────────────────────────────
+function renderStats() {
+  const scored = allResults.filter(r => r.totalScore !== null && r.totalScore !== undefined);
+  const avg = scored.length ? Math.round(scored.reduce((s,r) => s+r.totalScore, 0) / scored.length) : '—';
+  const na = allResults.filter(r => r.totalScore === null || r.totalScore === undefined).length;
+  const flagged = allResults.filter(r => r.flagged).length;
+  const fail = allResults.filter(r => r.autoFail).length;
+  document.getElementById('statTotal').textContent = allResults.length;
+  document.getElementById('statAvg').textContent = avg;
+  document.getElementById('statNA').textContent = na;
+  document.getElementById('statFlagged').textContent = flagged;
+  document.getElementById('statFail').textContent = fail;
+}
+
+// ─── Table rendering ──────────────────────────────────────────────────────────
+function renderTable() {
+  const tbody = document.getElementById('resultsBody');
+  tbody.innerHTML = '';
+
+  if (!filteredResults.length) {
+    tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state">NO RESULTS MATCH FILTERS</div></td></tr>`;
+    document.getElementById('tableFooter').textContent = '';
+    return;
+  }
+
+  filteredResults.forEach((r, idx) => {
+    const catClass = CAT_CLASS[r.category] || 'cat-service';
+    const sc = r.totalScore;
+    const scoreDisplay = sc !== null && sc !== undefined
+      ? `<span class="score-display ${scoreClass(sc)}">${sc}</span><span style="color:var(--muted);font-size:11px;">/100</span>`
+      : `<span class="score-na">N/A</span>`;
+
+    const breakdownHtml = (r.totalScore !== null && r.totalScore !== undefined && r.breakdown)
+      ? `<span style="font-family:var(--mono);font-size:10px;color:var(--muted);">A:${(r.breakdown.accuracy??0)+(r.breakdown.resolution??0)} B:${(r.breakdown.tone??0)+(r.breakdown.listening??0)} C:${(r.breakdown.speed??0)+(r.breakdown.crm??0)} D:${(r.breakdown.formatting??0)+(r.breakdown.grammar??0)+(r.breakdown.closing??0)}</span>`
+      : '<span style="color:var(--muted);font-size:10px;font-family:var(--mono);">—</span>';
+
+    const flagHtml = r.flagged
+      ? `<span class="flag-icon">⚑ FLAGGED</span>`
+      : (r.autoFail ? `<span class="flag-icon">✗ AUTO-FAIL</span>` : '<span style="color:var(--muted);font-size:12px;">—</span>');
+
+    const inMsgs = r.msgs.filter(m=>m.direction?.toLowerCase()==='inbound').length;
+    const outMsgs = r.msgs.filter(m=>m.direction?.toLowerCase()==='outbound').length;
+
+    const rowId = `row-${idx}`;
+    const expId = `exp-${idx}`;
+
+    const tr = document.createElement('tr');
+    tr.id = rowId;
+    tr.onclick = () => toggleExpand(idx, expId, rowId);
+    tr.innerHTML = `
+      <td><div class="prospect-id">${r.prospectId}</div></td>
+      <td><div class="agent-name">${r.owner}</div></td>
+      <td><span class="cat-badge ${catClass}">${r.category}</span></td>
+      <td><div class="subcat">${r.subcategory || '—'}</div></td>
+      <td>${scoreDisplay}</td>
+      <td>${breakdownHtml}</td>
+      <td><span class="msg-count">↓${inMsgs} ↑${outMsgs}</span></td>
+      <td>${flagHtml}</td>
+    `;
+    tbody.appendChild(tr);
+
+    // Expanded row
+    const expTr = document.createElement('tr');
+    expTr.id = expId;
+    expTr.className = 'expanded-row';
+    expTr.innerHTML = `<td colspan="8">${buildExpanded(r)}</td>`;
+    tbody.appendChild(expTr);
+  });
+
+  document.getElementById('tableFooter').textContent = `Showing ${filteredResults.length} of ${allResults.length} threads`;
+}
+
+function toggleExpand(idx, expId, rowId) {
+  const expRow = document.getElementById(expId);
+  const mainRow = document.getElementById(rowId);
+  const isOpen = expRow.classList.contains('visible');
+  // Close all
+  document.querySelectorAll('.expanded-row.visible').forEach(r => r.classList.remove('visible'));
+  document.querySelectorAll('tbody tr.expanded').forEach(r => r.classList.remove('expanded'));
+  if (!isOpen) {
+    expRow.classList.add('visible');
+    mainRow.classList.add('expanded');
+  }
+}
+
+function buildExpanded(r) {
+  const scoreSection = (r.totalScore !== null && r.totalScore !== undefined && r.breakdown)
+    ? buildScoreCards(r)
+    : (r.insufficient
+      ? `<div class="insufficient-badge">⚠ NOT SCORED — Insufficient Agent Interaction (≤1 outbound message)</div>`
+      : '<div class="insufficient-badge">Score unavailable</div>');
+
+  const flagSection = r.flagged || r.autoFail
+    ? `<div class="flag-detail">
+        ${r.autoFail ? '🚨 <strong>AUTO-FAIL</strong>: Accuracy scored 0 — factual error detected.<br>' : ''}
+        ${r.flagReason ? `⚑ <strong>Flag Reason:</strong> ${r.flagReason}` : ''}
+       </div>`
+    : '';
+
+  const chatHtml = r.msgs.map(m => {
+    const isOut = m.direction?.toLowerCase() === 'outbound';
+    return `<div class="bubble-${isOut?'out':'in'} chat-bubble">
+      <div class="bubble-meta">${isOut ? '🤖 '+m.owner : '👤 Student'} · ${m.activityDate || ''}</div>
+      ${escapeHtml(m.notes)}
+    </div>`;
+  }).join('');
+
+  return `<div class="expanded-content">
+    <div class="exp-card">
+      <h4>💬 Conversation Thread (${r.msgs.length} messages)</h4>
+      <div class="chat-thread">${chatHtml}</div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:16px;">
+      <div class="exp-card">
+        <h4>📋 QA Score Breakdown</h4>
+        ${scoreSection}
+      </div>
+      ${r.feedback ? `<div class="exp-card">
+        <h4>💡 AI Feedback</h4>
+        <div class="feedback-text">${escapeHtml(r.feedback)}</div>
+      </div>` : ''}
+      ${flagSection ? `<div class="exp-card"><h4>⚑ Flag Details</h4>${flagSection}</div>` : ''}
+    </div>
+  </div>`;
+}
+
+function buildScoreCards(r) {
+  const b = r.breakdown;
+  const items = [
+    { label: 'Accuracy', val: b.accuracy, max: 20 },
+    { label: 'Resolution', val: b.resolution, max: 20 },
+    { label: 'Tone', val: b.tone, max: 15 },
+    { label: 'Listening', val: b.listening, max: 10 },
+    { label: 'Speed', val: b.speed, max: 10 },
+    { label: 'CRM/Auth', val: b.crm, max: 10 },
+    { label: 'Formatting', val: b.formatting, max: 5 },
+    { label: 'Grammar', val: b.grammar, max: 5 },
+    { label: 'Closing', val: b.closing, max: 5 },
+  ];
+  const pct = Math.round(r.totalScore);
+  const col = scoreBarColor(r.totalScore);
+
+  return `
+    <div style="display:flex;align-items:center;gap:16px;margin-bottom:14px;padding:12px;background:var(--surface);border-radius:10px;">
+      <div style="font-size:40px;font-weight:700;font-family:var(--mono);color:${col};">${pct}</div>
+      <div style="flex:1">
+        <div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-bottom:6px;">TOTAL SCORE / 100</div>
+        <div style="background:var(--bg);border-radius:4px;height:6px;overflow:hidden;">
+          <div style="height:6px;width:${pct}%;background:${col};border-radius:4px;transition:width 0.6s;"></div>
         </div>
-      );
+      </div>
+    </div>
+    <div class="score-grid">
+      ${items.map(item => {
+        const v = item.val ?? 0;
+        const pct2 = Math.round(v / item.max * 100);
+        const col2 = v === 0 ? 'var(--danger)' : v === item.max ? 'var(--success)' : 'var(--warn)';
+        return `<div class="score-item">
+          <div class="score-item-label">${item.label}</div>
+          <div class="score-item-val" style="color:${col2};">${v}<span class="score-item-max">/${item.max}</span></div>
+          <div class="score-bar-wrap"><div class="score-bar-fill" style="width:${pct2}%;background:${col2};"></div></div>
+        </div>`;
+      }).join('')}
+    </div>
+  `;
+}
+
+function escapeHtml(t) {
+  if (!t) return '';
+  return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ─── Filters ─────────────────────────────────────────────────────────────────
+function applyFilters() {
+  const agent = document.getElementById('filterAgent').value;
+  const cat = document.getElementById('filterCat').value;
+  const score = document.getElementById('filterScore').value;
+  const flag = document.getElementById('filterFlag').value;
+  const search = document.getElementById('filterSearch').value.toLowerCase();
+
+  filteredResults = allResults.filter(r => {
+    if (agent && r.owner !== agent) return false;
+    if (cat && r.category !== cat) return false;
+    if (flag === 'flagged' && !r.flagged && !r.autoFail) return false;
+    if (score) {
+      const s = r.totalScore;
+      if (score === 'high' && (s === null || s < 80)) return false;
+      if (score === 'mid' && (s === null || s < 40 || s >= 80)) return false;
+      if (score === 'low' && (s === null || s >= 40)) return false;
+      if (score === 'na' && s !== null && s !== undefined) return false;
     }
-
-    function DonutChart({ data, total }) {
-      const cats = Object.entries(data).sort(([,a],[,b]) => b-a);
-      let cum = 0;
-      const r=60, cx=70, cy=70, sw=22, circ=2*Math.PI*r;
-      const slices = cats.map(([cat,count]) => {
-        const pct = count/total;
-        const offset = circ*(1-cum-pct); cum+=pct;
-        return { cat, dasharray:`${circ*pct} ${circ*(1-pct)}`, offset };
-      });
-      return (
-        <svg viewBox="0 0 140 140" width={140} height={140}>
-          <circle cx={cx} cy={cy} r={r} fill="none" stroke="#f1f5f9" strokeWidth={sw}/>
-          {slices.map(({cat,dasharray,offset}) => (
-            <circle key={cat} cx={cx} cy={cy} r={r} fill="none"
-              stroke={CATEGORY_COLORS[cat]||"#94a3b8"} strokeWidth={sw}
-              strokeDasharray={dasharray} strokeDashoffset={offset}
-              style={{transition:"all 0.7s ease",transform:"rotate(-90deg)",transformOrigin:"50% 50%"}}/>
-          ))}
-          <text x={cx} y={cy-4} textAnchor="middle" fontSize={22} fontWeight={800} fill="#1e293b">{total}</text>
-          <text x={cx} y={cy+12} textAnchor="middle" fontSize={10} fill="#94a3b8">chats</text>
-        </svg>
-      );
+    if (search) {
+      const hay = (r.prospectId + r.owner + r.msgs.map(m=>m.notes).join(' ')).toLowerCase();
+      if (!hay.includes(search)) return false;
     }
+    return true;
+  });
+  renderTable();
+}
 
-    function SentimentBadge({ s }) {
-      const cfg = { Positive:["#10b981","#f0fdf4","😊"], Neutral:["#f59e0b","#fffbeb","😐"], Negative:["#ef4444","#fef2f2","😞"] };
-      const [color,bg,emoji] = cfg[s]||cfg.Neutral;
-      return (
-        <span style={{background:bg,color,border:`1px solid ${color}33`}}
-          className="text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap">
-          {emoji} {s}
-        </span>
-      );
+function resetFilters() {
+  document.getElementById('filterAgent').value = '';
+  document.getElementById('filterCat').value = '';
+  document.getElementById('filterScore').value = '';
+  document.getElementById('filterFlag').value = '';
+  document.getElementById('filterSearch').value = '';
+  filteredResults = [...allResults];
+  renderTable();
+}
+
+// ─── Sort ────────────────────────────────────────────────────────────────────
+function sortTable(key) {
+  if (sortKey === key) sortDir *= -1; else sortDir = 1;
+  sortKey = key;
+  filteredResults.sort((a, b) => {
+    let av = a[key], bv = b[key];
+    if (key === 'totalScore') {
+      av = av ?? -1; bv = bv ?? -1;
     }
+    if (typeof av === 'string') av = av.toLowerCase();
+    if (typeof bv === 'string') bv = bv.toLowerCase();
+    return av > bv ? sortDir : av < bv ? -sortDir : 0;
+  });
+  renderTable();
+}
 
-    function ScoreBar({ value, max }) {
-      const pct = max > 0 ? (value/max)*100 : 0;
-      const color = pct===100?"#10b981":pct>=50?"#f59e0b":"#ef4444";
-      return (
-        <div className="flex items-center gap-2">
-          <div className="flex-1 bg-slate-700 rounded-full h-1.5 overflow-hidden">
-            <div style={{width:`${pct}%`,background:color}} className="h-full rounded-full transition-all duration-500"/>
-          </div>
-          <span style={{color}} className="text-[10px] font-bold font-mono w-10 text-right">{value}/{max}</span>
-        </div>
-      );
-    }
-
-    // ── Main App ──────────────────────────────────────────────────────────────
-    function App() {
-      const [apiKey, setApiKey] = useState("");
-      const [tempKey, setTempKey] = useState("");
-      const [showSettings, setShowSettings] = useState(false);
-      const [stage, setStage] = useState("upload");
-      const [results, setResults] = useState([]);
-      const [progress, setProgress] = useState(0);
-      const [total, setTotal] = useState(0);
-      const [search, setSearch] = useState("");
-      const [filterCat, setFilterCat] = useState("All");
-      const [filterSent, setFilterSent] = useState("All");
-      const [filterFlag, setFilterFlag] = useState("All");
-      const [expanded, setExpanded] = useState(null);
-      const [error, setError] = useState("");
-      const fileRef = useRef();
-      const abortRef = useRef(false);
-
-      useEffect(() => {
-        const k = localStorage.getItem("gemini_qa_key_v2");
-        if (k) setApiKey(k); else setShowSettings(true);
-      }, []);
-
-      const saveKey = () => {
-        if (tempKey.trim()) {
-          localStorage.setItem("gemini_qa_key_v2", tempKey.trim());
-          setApiKey(tempKey.trim()); setShowSettings(false); setTempKey("");
-        }
-      };
-
-      const handleFiles = useCallback(async (files) => {
-        if (!apiKey) { setShowSettings(true); return; }
-        setError("");
-        try {
-          let allRows = [];
-          for (const f of files) allRows = allRows.concat(await parseCSV(f));
-          const convos = buildConversations(allRows);
-          if (!convos.length) { setError("No valid conversations found. Check that CSV has 'Prospect Id' and 'Notes' columns."); return; }
-          setTotal(convos.length); setResults([]); setProgress(0);
-          setStage("processing"); abortRef.current = false;
-          const out = [];
-          for (let i = 0; i < convos.length; i++) {
-            if (abortRef.current) break;
-            const res = await classifyConversation(convos[i], apiKey);
-            out.push({ ...convos[i], ...res });
-            setProgress(i+1); setResults([...out]);
-            if (i < convos.length-1) await new Promise(r => setTimeout(r, 500));
-          }
-          if (!abortRef.current) setStage("done");
-        } catch(e) { setError("Parse error: " + e.message); setStage("upload"); }
-      }, [apiKey]);
-
-      const onDrop = useCallback((e) => {
-        e.preventDefault();
-        handleFiles([...e.dataTransfer.files].filter(f => f.name.endsWith(".csv")));
-      }, [handleFiles]);
-
-      const exportCSV = () => {
-        const H = ["Prospect Id","Student ID","Name","Email","Phone","Owner","Lead Stage","Current Batch",
-          "Category","Subcategory","Sentiment","Summary","Message Count",
-          "QA Score","Flagged","Flag Reason","QA Feedback",
-          "Accuracy(20)","Resolution(20)","Tone(15)","Listening(10)",
-          "Speed(10)","CRM(10)","Formatting(5)","Grammar(5)","Closing(5)"];
-        const rows = results.map(r => {
-          const s = r.scores||{};
-          return [r.prospectId,r.studentId,r.name,r.email,r.phone,r.owner,r.leadStage,r.currentBatch,
-            r.category,r.subcategory,r.sentiment,`"${(r.summary||"").replace(/"/g,"'")}"`,r.messages.length,
-            r.totalScore||0,r.flagged?"Yes":"No",r.flagReason||"",`"${(r.qaFeedback||"").replace(/"/g,"'")}"`,
-            s.accuracyScore||0,s.resolutionScore||0,s.toneScore||0,s.listeningScore||0,
-            s.speedScore||0,s.crmScore||0,s.formattingScore||0,s.grammarScore||0,s.closingScore||0];
-        });
-        const csv = [H,...rows].map(r=>r.join(",")).join("\n");
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
-        a.download = "whatsapp_qa_results.csv"; a.click();
-      };
-
-      const catCounts = results.reduce((a,r)=>({...a,[r.category]:(a[r.category]||0)+1}),{});
-      const sentCounts = results.reduce((a,r)=>({...a,[r.sentiment]:(a[r.sentiment]||0)+1}),{});
-      const flaggedCount = results.filter(r=>r.flagged).length;
-      const avgScore = results.length ? Math.round(results.reduce((a,r)=>a+(r.totalScore||0),0)/results.length) : 0;
-
-      const filtered = results.filter(r => {
-        const s = search.toLowerCase();
-        return (!s || [r.name,r.studentId,r.summary,r.category,r.owner].some(v=>(v||"").toLowerCase().includes(s)))
-          && (filterCat==="All" || r.category===filterCat)
-          && (filterSent==="All" || r.sentiment===filterSent)
-          && (filterFlag==="All" || (filterFlag==="Flagged"?r.flagged:!r.flagged));
-      });
-
-      const scoreGroups = [
-        { label:"Resolution & Accuracy", color:"#ef4444", items:[
-          {k:"Accuracy of Information",   key:"accuracyScore",   max:20, note:"20 or 0 — Auto-Fail if 0"},
-          {k:"Completeness + '+1 Method'",key:"resolutionScore", max:20, note:"20 / 10 / 0"},
-        ]},
-        { label:"Empathy & Tone", color:"#ec4899", items:[
-          {k:"Tone & Warmth",  key:"toneScore",      max:15, note:"15 / 7 / 0"},
-          {k:"Active Listening",key:"listeningScore", max:10, note:"10 / 5 / 0"},
-        ]},
-        { label:"Process & Efficiency", color:"#3b82f6", items:[
-          {k:"Response Speed (TAT)",key:"speedScore", max:10, note:"10 / 5 / 0"},
-          {k:"CRM & Authentication", key:"crmScore",  max:10, note:"10 / 5 / 0"},
-        ]},
-        { label:"Communication", color:"#f59e0b", items:[
-          {k:"Clarity & Formatting",key:"formattingScore", max:5, note:"5 / 2 / 0"},
-          {k:"Spelling & Grammar",  key:"grammarScore",    max:5, note:"5 / 2 / 0"},
-          {k:"Professional Closing",key:"closingScore",    max:5, note:"5 or 0"},
-        ]},
-      ];
-
-      return (
-        <div className="min-h-screen bg-slate-50 text-slate-800 font-sans">
-
-          {/* Settings Modal */}
-          {showSettings && (
-            <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-              <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-7">
-                <div className="text-4xl mb-3 text-center">🔑</div>
-                <h2 className="text-xl font-bold text-center mb-1">Gemini API Key</h2>
-                <p className="text-sm text-slate-500 text-center mb-6">Saved locally in your browser. Never sent anywhere else.</p>
-                <input type="password" value={tempKey} onChange={e=>setTempKey(e.target.value)}
-                  onKeyDown={e=>e.key==="Enter"&&saveKey()}
-                  placeholder="AIzaSy..."
-                  className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-400 outline-none mb-4"/>
-                <div className="flex gap-2 justify-end">
-                  {apiKey && <button onClick={()=>setShowSettings(false)} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button>}
-                  <button onClick={saveKey} disabled={!tempKey.trim()}
-                    className="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-sm font-semibold rounded-lg">
-                    Save & Continue
-                  </button>
-                </div>
-                <p className="text-center text-xs text-slate-400 mt-4">
-                  Get a free key → <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-blue-500 hover:underline">aistudio.google.com</a>
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Header */}
-          <header className="bg-slate-900 px-6 py-3.5 flex items-center justify-between sticky top-0 z-10 shadow-lg">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 bg-emerald-500 rounded-lg flex items-center justify-center text-xl">💬</div>
-              <div>
-                <h1 className="text-white font-bold text-sm tracking-tight">WhatsApp Chat QA Auditor</h1>
-                <p className="text-slate-400 text-[10px] tracking-wide">Powered by Gemini AI · Zell Education</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button onClick={()=>setShowSettings(true)} title="API Key" className="text-slate-400 hover:text-white bg-slate-800 rounded-md p-2 text-sm">⚙️</button>
-              {stage==="done" && <button onClick={exportCSV} className="flex items-center gap-1.5 bg-white text-slate-900 hover:bg-slate-100 rounded-md px-3 py-2 text-xs font-semibold ml-2">⬇ Export CSV</button>}
-              {stage!=="upload" && <button onClick={()=>{abortRef.current=true;setStage("upload");setResults([]);setProgress(0);}} className="text-slate-300 hover:text-white bg-slate-800 rounded-md px-3 py-2 text-xs font-semibold ml-1">↩ Reset</button>}
-            </div>
-          </header>
-
-          <main className="p-6 max-w-7xl mx-auto">
-
-            {/* UPLOAD */}
-            {stage==="upload" && (
-              <div>
-                <p className="text-center text-slate-500 text-sm mb-2">Upload your raw WhatsApp chat exports (CSV from LSQ)</p>
-                <div onDragOver={e=>e.preventDefault()} onDrop={onDrop} onClick={()=>fileRef.current.click()}
-                  className="border-2 border-dashed border-slate-300 rounded-2xl p-16 text-center cursor-pointer bg-white hover:bg-slate-50 hover:border-blue-400 transition-all max-w-lg mx-auto my-8 shadow-sm group">
-                  <div className="text-5xl mb-3 group-hover:scale-110 transition-transform">📂</div>
-                  <div className="font-bold text-slate-800 text-lg mb-1">Drop CSV files here</div>
-                  <div className="text-sm text-slate-400">or click to browse · Supports multiple files</div>
-                  <input ref={fileRef} type="file" accept=".csv" multiple hidden onChange={e=>handleFiles([...e.target.files])}/>
-                </div>
-                {error && <div className="max-w-lg mx-auto p-3 bg-red-50 border border-red-200 text-red-600 rounded-lg text-sm text-center">{error}</div>}
-                {/* Taxonomy preview */}
-                <div className="max-w-5xl mx-auto mt-8">
-                  <div className="text-xs font-bold text-slate-400 tracking-widest uppercase text-center mb-4">Classification Taxonomy</div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    {Object.entries(TAXONOMY).map(([cat,subs])=>(
-                      <div key={cat} style={{borderLeft:`3px solid ${CATEGORY_COLORS[cat]}`}} className="bg-white rounded-lg p-3 shadow-sm">
-                        <div style={{color:CATEGORY_COLORS[cat]}} className="font-bold text-xs mb-2">{cat}</div>
-                        {subs.map(s=><div key={s} className="text-[11px] text-slate-500 mb-0.5">· {s}</div>)}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* PROCESSING */}
-            {stage==="processing" && (
-              <div className="max-w-xl mx-auto mt-16 text-center">
-                <div className="text-5xl mb-4">✨</div>
-                <h2 className="text-xl font-bold mb-1">Auditing Conversations...</h2>
-                <p className="text-sm text-slate-500 mb-8">Gemini is classifying, scoring each conversation and generating feedback.</p>
-                <div className="bg-slate-200 rounded-full h-2 mb-2 overflow-hidden">
-                  <div className="h-full rounded-full transition-all duration-300"
-                    style={{width:`${total?(progress/total)*100:0}%`,background:"linear-gradient(90deg,#3b82f6,#8b5cf6)"}}/>
-                </div>
-                <div className="flex justify-between text-xs text-slate-500 px-1 mb-10">
-                  <span>{Math.round((progress/total)*100||0)}%</span>
-                  <span>{progress} / {total}</span>
-                </div>
-                {results.slice(-4).reverse().map((r,i)=>(
-                  <div key={i} className="bg-white rounded-lg shadow-sm border border-slate-100 p-3 mb-2 flex items-center gap-3 text-left">
-                    <div className={`text-sm font-black w-10 text-center ${r.totalScore>=80?"text-emerald-600":r.totalScore>=60?"text-orange-500":"text-red-600"}`}>{r.totalScore||0}</div>
-                    <span style={{background:CATEGORY_BG[r.category]||"#f1f5f9",color:CATEGORY_COLORS[r.category]||"#64748b",border:`1px solid ${(CATEGORY_COLORS[r.category]||"#94a3b8")}33`}}
-                      className="text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap">{r.category}</span>
-                    <span className="text-xs text-slate-700 flex-1 truncate font-medium">{r.name}</span>
-                    <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{r.subcategory}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* DASHBOARD */}
-            {stage==="done" && (
-              <div>
-                {/* KPIs */}
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-                  {[
-                    {label:"Total Audited",  value:results.length,    icon:"💬", border:"border-slate-200"},
-                    {label:"Avg QA Score",   value:`${avgScore}/100`, icon:"🎯", border:"border-purple-400", vc:avgScore>=80?"text-purple-600":"text-orange-500"},
-                    {label:"Negative Chats", value:sentCounts.Negative||0, icon:"😞", border:"border-red-300", vc:"text-red-500"},
-                    {label:"Flagged Chats",  value:flaggedCount,      icon:"🚩", border:"border-rose-500", vc:"text-rose-600"},
-                    {label:"Categories",     value:Object.keys(catCounts).length, icon:"🗂️", border:"border-blue-300"},
-                  ].map(s=>(
-                    <div key={s.label} className={`bg-white rounded-xl p-5 shadow-sm border-b-4 ${s.border}`}>
-                      <div className="text-2xl mb-1">{s.icon}</div>
-                      <div className={`text-3xl font-extrabold ${s.vc||"text-slate-800"}`}>{s.value}</div>
-                      <div className="text-xs text-slate-400 mt-1">{s.label}</div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Charts */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-5">
-                  <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5 flex flex-col items-center">
-                    <div className="text-xs font-bold text-slate-400 tracking-wider mb-3 self-start">BREAKDOWN</div>
-                    <DonutChart data={catCounts} total={results.length}/>
-                    <div className="mt-3 w-full space-y-1">
-                      {Object.entries(catCounts).sort(([,a],[,b])=>b-a).map(([cat,cnt])=>(
-                        <div key={cat} className="flex items-center gap-2">
-                          <div style={{background:CATEGORY_COLORS[cat]}} className="w-2.5 h-2.5 rounded-sm shrink-0"/>
-                          <div className="text-[10px] text-slate-500 flex-1 truncate">{cat}</div>
-                          <div className="text-[10px] font-bold text-slate-700">{cnt}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5 md:col-span-2">
-                    <div className="text-xs font-bold text-slate-400 tracking-wider mb-4">DISTRIBUTION BY CATEGORY</div>
-                    <MiniBar data={catCounts} total={results.length}/>
-                  </div>
-                </div>
-
-                {/* Filters */}
-                <div className="flex flex-wrap gap-2 mb-3 items-center bg-white p-2 border border-slate-200 rounded-lg shadow-sm">
-                  <div className="relative flex-1 min-w-[180px]">
-                    <span className="absolute left-2.5 top-2.5 text-slate-400 text-xs">🔍</span>
-                    <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search name, ID, summary..."
-                      className="w-full pl-8 pr-3 py-2 bg-slate-50 rounded-md text-sm border border-transparent focus:border-blue-400 focus:bg-white outline-none transition-all"/>
-                  </div>
-                  {[
-                    {val:filterCat, set:setFilterCat, opts:["All Categories",...Object.keys(TAXONOMY)]},
-                    {val:filterSent,set:setFilterSent,opts:["All Sentiments","Positive","Neutral","Negative"]},
-                    {val:filterFlag,set:setFilterFlag,opts:["All","Flagged","Clean"]},
-                  ].map((f,i)=>(
-                    <select key={i} value={f.val} onChange={e=>f.set(e.target.value)}
-                      className="py-2 px-3 bg-slate-50 border border-slate-200 rounded-md text-sm outline-none focus:border-blue-400 cursor-pointer">
-                      {f.opts.map(o=><option key={o}>{o}</option>)}
-                    </select>
-                  ))}
-                  <span className="text-xs text-slate-400 px-2">{filtered.length} of {results.length}</span>
-                </div>
-
-                {/* Table */}
-                <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-                  <div className="grid grid-cols-12 gap-3 px-5 py-3 bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                    <div className="col-span-3">Student</div>
-                    <div className="col-span-3">Issue Summary</div>
-                    <div className="col-span-2">Category</div>
-                    <div className="col-span-2">Sub-category</div>
-                    <div className="col-span-1 text-center">Feel</div>
-                    <div className="col-span-1 text-center">QA Score</div>
-                  </div>
-
-                  {filtered.length===0 ? (
-                    <div className="p-12 text-center text-slate-400 text-sm">No conversations match your filters.</div>
-                  ) : (
-                    <div className="divide-y divide-slate-100 max-h-[600px] overflow-y-auto">
-                      {filtered.map((r,i)=>(
-                        <div key={r.prospectId+i}>
-                          <div onClick={()=>setExpanded(expanded===i?null:i)}
-                            className={`grid grid-cols-12 gap-3 px-5 py-3.5 items-center cursor-pointer transition-colors ${r.flagged&&expanded!==i?"bg-red-50/40":i%2===0?"bg-white":"bg-slate-50/50"} hover:bg-blue-50/50`}>
-                            <div className="col-span-3">
-                              <div className="font-semibold text-sm text-slate-800 truncate">{r.name}</div>
-                              <div className="text-[10px] text-slate-400 mt-0.5">
-                                {r.studentId&&<span className="text-slate-500">#{r.studentId} · </span>}
-                                {r.owner&&<span className="text-indigo-500 font-medium">@{r.owner} · </span>}
-                                {r.messages.length} msgs
-                              </div>
-                            </div>
-                            <div className="col-span-3 text-xs text-slate-600 leading-snug">{r.summary}</div>
-                            <div className="col-span-2">
-                              <span style={{background:CATEGORY_BG[r.category]||"#f1f5f9",color:CATEGORY_COLORS[r.category]||"#64748b",border:`1px solid ${(CATEGORY_COLORS[r.category]||"#94a3b8")}33`}}
-                                className="text-[10px] font-bold px-2.5 py-1 rounded-full inline-block max-w-full truncate">
-                                {r.category}
-                              </span>
-                            </div>
-                            <div className="col-span-2">
-                              <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-1 rounded-md inline-block max-w-full truncate">{r.subcategory}</span>
-                            </div>
-                            <div className="col-span-1 flex justify-center"><SentimentBadge s={r.sentiment}/></div>
-                            <div className="col-span-1 flex items-center justify-center gap-1">
-                              <span className={`text-sm font-black ${r.totalScore>=80?"text-emerald-600":r.totalScore>=60?"text-orange-500":"text-red-600"}`}>{r.totalScore||0}</span>
-                              {r.flagged && <span title={r.flagReason} className="text-sm cursor-help">🚩</span>}
-                            </div>
-                          </div>
-
-                          {/* Expanded */}
-                          {expanded===i && (
-                            <div className="bg-slate-800 px-5 py-5 grid grid-cols-1 lg:grid-cols-5 gap-5">
-
-                              {/* Chat Thread (left 3 cols) */}
-                              <div className="lg:col-span-3">
-                                <div className="flex justify-between items-center mb-3">
-                                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Chat Thread</div>
-                                  <div className="text-[9px] text-slate-500 font-mono">{r.prospectId}</div>
-                                </div>
-                                <div className="max-h-[400px] overflow-y-auto pr-1 space-y-3 custom-scrollbar">
-                                  {r.messages.map((m,mi)=>(
-                                    <div key={mi} className={`flex flex-col max-w-[80%] ${m.direction?.toLowerCase()==="outbound"?"ml-auto items-end":"mr-auto items-start"}`}>
-                                      <div className={`p-3 text-xs leading-relaxed rounded-2xl ${m.direction?.toLowerCase()==="outbound"?"bg-blue-600 text-white rounded-tr-sm":"bg-slate-700 text-slate-200 rounded-tl-sm"}`}>
-                                        {m.note}
-                                      </div>
-                                      <div className="text-[9px] text-slate-500 mt-1 px-1 font-medium">
-                                        {m.direction} · {new Date(m.date).toLocaleString([],{dateStyle:"short",timeStyle:"short"})}
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-
-                              {/* QA Scorecard (right 2 cols) */}
-                              <div className="lg:col-span-2 flex flex-col gap-3">
-                                <div className="bg-slate-900 rounded-xl p-4 border border-slate-700">
-                                  <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-700">
-                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">QA Scorecard</div>
-                                    <div className={`text-2xl font-black ${r.totalScore>=80?"text-emerald-400":r.totalScore>=60?"text-orange-400":"text-red-400"}`}>
-                                      {r.totalScore||0}<span className="text-xs text-slate-500">/100</span>
-                                    </div>
-                                  </div>
-                                  <div className="space-y-4 max-h-[300px] overflow-y-auto custom-scrollbar">
-                                    {scoreGroups.map(g=>(
-                                      <div key={g.label}>
-                                        <div style={{color:g.color}} className="text-[10px] font-bold uppercase tracking-wider mb-2">{g.label}</div>
-                                        <div className="space-y-2">
-                                          {g.items.map(item=>(
-                                            <div key={item.k}>
-                                              <div className="flex justify-between text-[10px] mb-0.5">
-                                                <span className="text-slate-300">{item.k}</span>
-                                                <span className="text-slate-500 italic">{item.note}</span>
-                                              </div>
-                                              <ScoreBar value={r.scores?.[item.key]||0} max={item.max}/>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-
-                                {/* Feedback / Flag */}
-                                <div className={`rounded-xl p-4 border text-xs ${r.flagged?"bg-red-900/30 border-red-700 text-red-200":"bg-slate-900 border-slate-700 text-slate-300"}`}>
-                                  {r.flagged && <div className="font-bold text-red-400 not-italic mb-2 flex items-center gap-2 text-[11px]">🚩 FLAGGED: {r.flagReason}</div>}
-                                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Agent Feedback</div>
-                                  <p className="italic leading-relaxed">"{r.qaFeedback}"</p>
-                                </div>
-                              </div>
-
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </main>
-
-          <style dangerouslySetInnerHTML={{__html:`
-            .custom-scrollbar::-webkit-scrollbar{width:5px}
-            .custom-scrollbar::-webkit-scrollbar-track{background:#0f172a;border-radius:4px}
-            .custom-scrollbar::-webkit-scrollbar-thumb{background:#334155;border-radius:4px}
-            .custom-scrollbar::-webkit-scrollbar-thumb:hover{background:#475569}
-          `}}/>
-        </div>
-      );
-    }
-
-    ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
-  </script>
+// ─── Export CSV ───────────────────────────────────────────────────────────────
+function exportCSV() {
+  const rows = [['Prospect ID','Agent','Category','Subcategory','Total Score','Accuracy','Resolution','Tone','Listening','Speed','CRM','Formatting','Grammar','Closing','Flagged','Flag Reason','Feedback']];
+  for (const r of filteredResults) {
+    const b = r.breakdown || {};
+    rows.push([
+      r.prospectId, r.owner, r.category, r.subcategory || '',
+      r.totalScore ?? 'N/A',
+      b.accuracy ?? '', b.resolution ?? '', b.tone ?? '', b.listening ?? '',
+      b.speed ?? '', b.crm ?? '', b.formatting ?? '', b.grammar ?? '', b.closing ?? '',
+      r.flagged ? 'Yes' : 'No', r.flagReason || '', r.feedback || ''
+    ]);
+  }
+  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'}));
+  a.download = 'qa_results.csv';
+  a.click();
+}
+</script>
 </body>
 </html>
